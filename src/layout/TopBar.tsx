@@ -1,4 +1,4 @@
-import { CircleUserRound, Coins, Home, Image, PanelLeftClose } from "lucide-react";
+import { BookOpen, CircleUserRound, Coins, CreditCard, Home, Image } from "lucide-react";
 import { Link } from "react-router-dom";
 import { BrandMark } from "../components/BrandMark";
 import styles from "./AppShell.module.css";
@@ -10,7 +10,8 @@ export function TopBar() {
       <BrandMark />
       <nav className={styles.topnav} aria-label="顶部导航">
         <Link to="/text-to-image"><Home size={17} />首页</Link>
-        <button type="button" title="布局配置"><PanelLeftClose size={18} /></button>
+        <button type="button"><BookOpen size={17} />使用教程</button>
+        <button type="button"><CreditCard size={17} />充值中心</button>
       </nav>
       <div className={styles.accountStrip}>
         <span><Coins size={17} /> 9,999 金豆</span>

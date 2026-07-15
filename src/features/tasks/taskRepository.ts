@@ -2,7 +2,7 @@ import { DEMO_TASKS } from "./mockTasks";
 import type { CreateTaskInput, GenerationTask } from "./types";
 
 /** LocalStorage 中保存原型历史任务的固定键名。 */
-export const STORAGE_KEY = "ptj.prototype.tasks.v1";
+export const STORAGE_KEY = "ptj.prototype.tasks.v2";
 /** 保存任务后用于通知应用外壳刷新的浏览器事件名。 */
 export const TASKS_UPDATED_EVENT = "ptj:tasks-updated";
 
@@ -16,7 +16,7 @@ function cloneDemoTasks(): GenerationTask[] {
     modelImages: [...task.modelImages],
     garmentImages: [...task.garmentImages],
     resultImages: [...task.resultImages],
-  }));
+  })).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 /**

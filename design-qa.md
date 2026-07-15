@@ -1,61 +1,65 @@
 # Design QA
 
-- Source visual truth path: `/Users/garden/.codex/visualizations/2026/07/15/019f63a5-d31a-7df2-b66c-fce7d960d7c6/text-source-desktop.png`
-- Implementation screenshot path: `/Users/garden/.codex/visualizations/2026/07/15/019f63a5-d31a-7df2-b66c-fce7d960d7c6/text-clone-1086-top.png`
-- Mobile implementation screenshot path: `/Users/garden/.codex/visualizations/2026/07/15/019f63a5-d31a-7df2-b66c-fce7d960d7c6/text-clone-mobile.png`
-- Viewport: 1086 x 873 desktop; 390 x 844 mobile
-- State: 批量文生图，主图选中，表单与生成内容同屏展示
+- source visual truth: `/var/folders/94/2dlbsm3968j4rqjll_d32qb40000gn/T/codex-clipboard-e87cfb8c-2213-466e-9457-e7473b0e6f0c.png`
+- implementation screenshot: `/Users/garden/.codex/visualizations/2026/07/15/019f63a5-d31a-7df2-b66c-fce7d960d7c6/ptj-redesign-text-qa-1308x1024.png`
+- intended viewport: 1440 × 1024 desktop
+- browser capture: 1308 × 1024（Codex 内置浏览器可用内容区宽度）
+- state: 批量文生图 / 套图 / 生成中 4/6 / 网格视图 / 1:1
 
 ## Full-view comparison evidence
 
-The source and implementation were reviewed together at the same desktop viewport. Both use a fixed top bar and left navigation, a larger form column, and an independently scrollable results column. The form contains the same four image-type tabs, large product-and-selling-point field, quantity stepper, model selector, optional Logo section, six aspect-ratio controls, and generation action. Result cards use the same time, command summary, model, ratio, image, and three follow-up actions.
+已在同一次视觉比较中同时打开原始设计图和浏览器实现截图。两者均采用固定顶部栏、左侧业务导航、左侧配置表单和右侧单任务结果工作台。主要区域比例、步骤条、四类图片选择、3 × 2 套图网格、元数据条、操作按钮和底部任务状态保持一致。
 
-The live source currently renders blue active states. The user explicitly requires the clone to retain the orange product direction, so this color deviation is intentional.
+浏览器截图宽度受内置浏览器内容区限制，比源图少 179px；实现使用响应式网格收窄了左右两栏，但没有隐藏关键操作、产生横向滚动或改变信息层级。
 
 ## Focused region comparison evidence
 
-The full-view evidence keeps the four image-type controls, prompt field, quantity/model controls, ratio controls, and right-side result-card actions readable without a separate crop. Focused interaction checks additionally covered:
+源图和实现截图在原始分辨率下均可直接辨认以下重点区域，因此未额外裁剪：
 
-- Main, set, listing, and poster tab selection.
-- Re-edit populating the form and restoring the task's image type.
-- Mock generation adding a new result card without leaving the page.
-- Text-to-image and image-to-image sharing the same result-card component.
-
-## Required fidelity surfaces
-
-- Fonts and typography: Chinese sans-serif hierarchy, task timestamps, metadata, labels, and small action text remain readable and close to the source density.
-- Spacing and layout rhythm: the desktop split workspace matches the source's form-plus-results composition; mobile collapses to one column with no horizontal overflow.
-- Colors and visual tokens: orange states are consistently applied per the user's explicit direction; background and card neutrals preserve the source's light workspace balance.
-- Image quality and asset fidelity: local demo assets remain crisp and use correct cover behavior; no source assets are hotlinked.
-- Copy and content: image types, form labels, metadata, history labels, and result-card actions match the observed source wording.
+- 顶部导航、余额与账户区。
+- 左侧三步流程、图片类型和固定张数说明。
+- 产品卖点、数量、模型、LOGO 和尺寸控件。
+- 右侧进度、六张套图、选中态、图片角色标签。
+- 任务元数据、重新编辑、再次生成、全部下载和底部状态。
 
 ## Findings
 
-No actionable P0, P1, or P2 issue remains.
+- 无 P0 / P1 / P2 问题。
+- [P3] 源图使用 1487px 宽截图，实现验收截图为 1308px 宽，因此右侧结果区略紧凑；在可用宽度内仍保持 3 × 2 网格和完整操作区，属于预期响应式差异。
+
+## Required fidelity surfaces
+
+- 字体与排版：使用 Avenir Next、苹方和微软雅黑回退；标题、步骤、表单标签、辅助文本和结果元数据层级与源图一致，无异常换行或截断。
+- 间距与布局节奏：双栏工作台、14px 圆角、细边框、低阴影和紧凑表单节奏一致；内置浏览器较窄时仍保持稳定。
+- 颜色与视觉令牌：主色保持 `#F28C18` 橙色，搭配暖白、浅灰和深灰文字；没有紫色品牌漂移。
+- 图片质量与素材保真：六张商品图为独立生成并压缩的真实 JPEG 素材，主题、裁切、暖光和奶油色调与源图一致；未使用占位图或 CSS 图形替代。
+- 文案与内容：保留主图 1 张、套图 6 张、详情图 5 张、海报 1 张，以及产品卖点、模型、LOGO、比例、任务状态和下载操作。
+
+## Interaction verification
+
+- 文生图：切换套图、填写产品卖点、点击开始生成、生成 6 张结果均通过。
+- 结果区：网格/列表视图切换、图片选择、重新编辑、再次生成和下载提示均可操作。
+- 图生图：路由切换、上传商品参考图入口、共用结果面板和 6 张套图结果均通过。
+- 浏览器控制台：无 error。
+- 自动化测试：14 项通过。
+- 生产构建：通过。
 
 ## Comparison history
 
-- Earlier P1: generated content lived on a separate history-detail route instead of beside the form.
-- Fix: added a two-column desktop workspace and a shared inline results panel for text-to-image and image-to-image.
-- Earlier P1: result cards did not expose the source actions and set-image multi-output behavior.
-- Fix: added time, prompt/type, model, ratio, multi-image gallery, re-edit, regenerate, download notice, and pagination.
-- Earlier P2: switching between text-to-image and image-to-image could retain the previous route's task list because React reused the component.
-- Fix: refresh the filtered task list whenever `mode` changes.
-- Post-fix evidence: desktop and mobile captures, four source tab checks, form refill verification, inline-generation verification, route-isolated task counts, and an empty browser error log.
+1. 第一次比较发现默认演示任务显示“已完成”且描述过短，和源图“正在生成 4/6”的状态不一致。
+2. 将默认套图任务改为生成中状态，并补齐产品描述；同时让演示任务按时间排序，保证套图任务默认置顶。
+3. 再次捕获并比较，进度、内容、六图网格和操作区已对齐，未留下 P0 / P1 / P2 问题。
 
 ## Implementation checklist
 
-- [x] Capture the source form and inline result layout.
-- [x] Verify all four image-type controls.
-- [x] Verify the source re-edit behavior.
-- [x] Implement the desktop split workspace.
-- [x] Share one result UI between text-to-image and image-to-image.
-- [x] Keep generated tasks on the current route.
-- [x] Verify mobile width and browser logs.
-- [x] Run the complete test and production-build suites.
+- [x] 文生图和图生图共用新版结果工作台。
+- [x] 四类图片固定张数清晰可见。
+- [x] 六张套图使用真实本地素材。
+- [x] 生成中、完成、空态和加载态均可见。
+- [x] 1440 桌面设计在内置浏览器可用宽度下通过响应式检查。
 
 ## Follow-up polish
 
-- P3: the source result column is slightly narrower at this exact viewport; the clone favors a little more room for metadata and action labels.
+- 可在下一轮补充 760px 以下移动端的专门视觉稿；当前已具备基础响应式布局，但本次目标仅为桌面端。
 
 final result: passed

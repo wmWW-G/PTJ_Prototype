@@ -1,4 +1,4 @@
-import { ChevronDown, Minus, Play, Plus, Sparkles } from "lucide-react";
+import { ChevronDown, Minus, Play, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { assetPath } from "../../lib/assetPath";
@@ -18,7 +18,14 @@ const retouchModes: Array<{ value: RetouchMode; label: string }> = [
   { value: "watermark", label: "去水印" }, { value: "copy", label: "改文案" }, { value: "cutout", label: "抠图" },
 ];
 const modeResultImages: Record<GenerationMode, string[]> = {
-  "text-to-image": [assetPath("demo/mug-hero.svg"), assetPath("demo/bowl-detail.svg"), assetPath("demo/bowl-scene.svg")],
+  "text-to-image": [
+    assetPath("demo/generated/mug-front.jpg"),
+    assetPath("demo/generated/mug-handle.jpg"),
+    assetPath("demo/generated/mug-rim.jpg"),
+    assetPath("demo/generated/mug-home.jpg"),
+    assetPath("demo/generated/mug-office.jpg"),
+    assetPath("demo/generated/mug-combo.jpg"),
+  ],
   "image-to-image": [assetPath("demo/bowl-hero.svg"), assetPath("demo/bowl-detail.svg"), assetPath("demo/bowl-scene.svg")],
   "ai-retouch": [assetPath("demo/cat-cutout.svg")],
   "outfit-swap": [assetPath("demo/outfit-result.svg")],
@@ -54,7 +61,7 @@ export function GenerationPage({ mode }: GenerationPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const editingTask = (location.state as { task?: GenerationTask } | null)?.task;
-  const [imageType, setImageType] = useState<ImageType>(editingTask?.imageType ?? "main");
+  const [imageType, setImageType] = useState<ImageType>(editingTask?.imageType ?? "set");
   const [retouchMode, setRetouchMode] = useState<RetouchMode>(editingTask?.retouchMode ?? "watermark");
   const [prompt, setPrompt] = useState(editingTask?.prompt ?? "");
   const [quantity, setQuantity] = useState(editingTask?.quantity ?? 1);
@@ -65,6 +72,7 @@ export function GenerationPage({ mode }: GenerationPageProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [tasks, setTasks] = useState<GenerationTask[]>(() => listTasks().filter((task) => task.mode === mode));
   const hasInlineResults = mode === "text-to-image" || mode === "image-to-image";
+  const plannedOutputCount = IMAGE_TYPE_RESULT_COUNTS[imageType] * quantity;
 
   /**
    * React Router 在文生图和图生图之间可能复用同一个组件实例。
@@ -123,14 +131,38 @@ export function GenerationPage({ mode }: GenerationPageProps) {
     <div className={`${styles.page} ${hasInlineResults ? styles.splitPage : ""}`}>
       <div className={styles.formColumn}>
         <header className={styles.pageHeader}>
-          <div><span className={styles.eyebrow}>AI IMAGE WORKSPACE</span><h1>{config.title}</h1></div>
-          <span className={styles.prototypeBadge}><Sparkles size={14} />原型演示</span>
+          <h1>{config.title}</h1>
+          {hasInlineResults && (
+            <ol className={styles.workflowSteps} aria-label="生成步骤">
+              <li className={styles.activeStep}><b>1</b><span>输入内容</span></li>
+              <li><b>2</b><span>生成设置</span></li>
+              <li><b>3</b><span>开始生成</span></li>
+            </ol>
+          )}
         </header>
 
         <section className={styles.workspace}>
         {config.hasImageTypes && (
-          <div className={styles.segmented} aria-label="图片类型">
-            {imageTypes.map((item) => <button key={item.value} type="button" className={imageType === item.value ? styles.selected : ""} onClick={() => setImageType(item.value)}>{item.label}</button>)}
+          <div className={styles.imageTypeBlock}>
+            <div className={styles.segmented} aria-label="图片类型">
+              {imageTypes.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  className={imageType === item.value ? styles.selected : ""}
+                  onClick={() => setImageType(item.value)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <div className={styles.typeCounts} aria-label="各类型固定生成张数">
+              {imageTypes.map((item) => (
+                <span key={item.value} className={imageType === item.value ? styles.activeCount : ""}>
+                  {item.label} {IMAGE_TYPE_RESULT_COUNTS[item.value]}张
+                </span>
+              ))}
+            </div>
           </div>
         )}
 
@@ -161,10 +193,11 @@ export function GenerationPage({ mode }: GenerationPageProps) {
 
         <div className={styles.ratioBlock}><span className={styles.fieldLabel}>图片尺寸</span><div className={styles.ratios}>{ratios.map((ratio) => <button key={ratio} type="button" className={aspectRatio === ratio ? styles.selected : ""} onClick={() => setAspectRatio(ratio)}>{ratio}</button>)}</div></div>
 
-        <button className={styles.generateButton} type="button" disabled={isGenerating} onClick={handleGenerate}>{isGenerating ? <><span className={styles.spinner} />正在生成演示结果</> : <><Play size={17} fill="currentColor" />开始生成</>}</button>
+        <button className={styles.generateButton} type="button" disabled={isGenerating} onClick={handleGenerate}>{isGenerating ? <><span className={styles.spinner} />正在生成 {plannedOutputCount} 张图片</> : <><Play size={17} fill="currentColor" />开始生成</>}</button>
+        <p className={styles.creditHint}>预计消耗 {plannedOutputCount} 张图额度（按每张图片生成数量 × 输出数量计算）</p>
         </section>
 
-        <section className={styles.historySection}>
+        <section className={`${styles.historySection} ${hasInlineResults ? styles.inlineHistory : ""}`}>
         <div className={styles.historyHeading}><div><span className={styles.eyebrow}>RECENT OUTPUTS</span><h2>历史记录</h2></div><div className={styles.dateInputs}><input aria-label="开始日期" type="date" /><span>→</span><input aria-label="结束日期" type="date" /></div></div>
         <div className={styles.historyTable} role="table">
           <div className={styles.historyRow} role="row"><strong>时间</strong><strong>指令内容</strong><span /></div>

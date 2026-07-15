@@ -75,6 +75,7 @@
 - `src/layout/`：顶部栏、左侧导航和历史任务外壳。
 - `src/features/generation/`：四种生成页面、上传和参数组件。
 - `src/features/generation/components/GenerationResultsPanel.tsx`：文生图和图生图共用的右侧生成内容、任务卡和后续操作。
+- `public/demo/generated/`：新版文生图套图结果使用的统一电商商品图素材。
 - `src/features/history/`：历史任务详情和后续操作。
 - `src/features/tasks/`：任务类型、演示数据和 LocalStorage 仓库。
 - `src/styles/`：全局样式和设计令牌。
@@ -135,6 +136,8 @@
 npm install
 npm run dev
 ```
+
+当前原型使用 `ptj.prototype.tasks.v2` 保存 Mock 任务。调整演示任务结构或业务张数时，需要同步检查 `src/features/tasks/mockTasks.ts` 和 `src/features/generation/config.ts`。
 
 生产构建：
 
