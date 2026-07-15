@@ -1,10 +1,11 @@
 import { ChevronDown, Minus, Play, Plus, Sparkles } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { assetPath } from "../../lib/assetPath";
 import { createMockTask, listTasks, saveTask } from "../tasks/taskRepository";
 import type { GenerationMode, GenerationTask, ImageType, RetouchMode } from "../tasks/types";
 import { GENERATION_CONFIG } from "./config";
+import { GenerationResultsPanel } from "./components/GenerationResultsPanel";
 import { UploadZone } from "./components/UploadZone";
 import styles from "./GenerationPage.module.css";
 
@@ -17,7 +18,7 @@ const retouchModes: Array<{ value: RetouchMode; label: string }> = [
   { value: "watermark", label: "去水印" }, { value: "copy", label: "改文案" }, { value: "cutout", label: "抠图" },
 ];
 const modeResultImages: Record<GenerationMode, string[]> = {
-  "text-to-image": [assetPath("demo/mug-hero.svg")],
+  "text-to-image": [assetPath("demo/mug-hero.svg"), assetPath("demo/bowl-detail.svg"), assetPath("demo/bowl-scene.svg")],
   "image-to-image": [assetPath("demo/bowl-hero.svg"), assetPath("demo/bowl-detail.svg"), assetPath("demo/bowl-scene.svg")],
   "ai-retouch": [assetPath("demo/cat-cutout.svg")],
   "outfit-swap": [assetPath("demo/outfit-result.svg")],
@@ -45,7 +46,40 @@ export function GenerationPage({ mode }: GenerationPageProps) {
   const [garmentImages, setGarmentImages] = useState<string[]>([]);
   const [modelImages, setModelImages] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const tasks = useMemo(() => listTasks().filter((task) => task.mode === mode), [mode]);
+  const [tasks, setTasks] = useState<GenerationTask[]>(() => listTasks().filter((task) => task.mode === mode));
+  const hasInlineResults = mode === "text-to-image" || mode === "image-to-image";
+
+  /**
+   * React Router 在文生图和图生图之间可能复用同一个组件实例。
+   * 模式变化时必须主动重读任务，避免右侧误显示上一个页面的结果。
+   */
+  useEffect(() => {
+    setTasks(listTasks().filter((task) => task.mode === mode));
+  }, [mode]);
+
+  /** 从 LocalStorage 重新读取当前模式的任务，保证右侧结果立即更新。 */
+  function refreshTasks() {
+    setTasks(listTasks().filter((task) => task.mode === mode));
+  }
+
+  /** 把右侧任务的参数原地回填到左侧表单。 */
+  function editTask(task: GenerationTask) {
+    setImageType(task.imageType);
+    setRetouchMode(task.retouchMode ?? "watermark");
+    setPrompt(task.prompt);
+    setQuantity(task.quantity);
+    setAspectRatio(task.aspectRatio);
+    setSourceImages(task.sourceImages);
+    setGarmentImages(task.garmentImages);
+    setModelImages(task.modelImages);
+  }
+
+  /** 复用历史任务参数创建一条新的 Mock 结果。 */
+  function regenerateTask(task: GenerationTask) {
+    const next = createMockTask({ ...task, mode: task.mode, prompt: task.prompt });
+    saveTask({ ...next, status: "completed", resultImages: [...task.resultImages] });
+    refreshTasks();
+  }
 
   /** 创建并完成一条 Mock 任务，模拟真实接口的状态变化。 */
   function handleGenerate() {
@@ -57,23 +91,26 @@ export function GenerationPage({ mode }: GenerationPageProps) {
       quantity, aspectRatio, sourceImages, garmentImages, modelImages,
     });
     saveTask(task);
+    refreshTasks();
     console.info("[批图匠] 开始模拟生成", { mode, taskId: task.id });
     window.setTimeout(() => {
       const completed = { ...task, status: "completed" as const, resultImages: modeResultImages[mode].slice(0, Math.max(1, quantity)) };
       saveTask(completed);
+      refreshTasks();
       setIsGenerating(false);
-      navigate(`/history/${completed.id}`);
+      if (!hasInlineResults) navigate(`/history/${completed.id}`);
     }, 650);
   }
 
   return (
-    <div className={styles.page}>
-      <header className={styles.pageHeader}>
-        <div><span className={styles.eyebrow}>AI IMAGE WORKSPACE</span><h1>{config.title}</h1></div>
-        <span className={styles.prototypeBadge}><Sparkles size={14} />原型演示</span>
-      </header>
+    <div className={`${styles.page} ${hasInlineResults ? styles.splitPage : ""}`}>
+      <div className={styles.formColumn}>
+        <header className={styles.pageHeader}>
+          <div><span className={styles.eyebrow}>AI IMAGE WORKSPACE</span><h1>{config.title}</h1></div>
+          <span className={styles.prototypeBadge}><Sparkles size={14} />原型演示</span>
+        </header>
 
-      <section className={styles.workspace}>
+        <section className={styles.workspace}>
         {config.hasImageTypes && (
           <div className={styles.segmented} aria-label="图片类型">
             {imageTypes.map((item) => <button key={item.value} type="button" className={imageType === item.value ? styles.selected : ""} onClick={() => setImageType(item.value)}>{item.label}</button>)}
@@ -108,15 +145,18 @@ export function GenerationPage({ mode }: GenerationPageProps) {
         <div className={styles.ratioBlock}><span className={styles.fieldLabel}>图片尺寸</span><div className={styles.ratios}>{ratios.map((ratio) => <button key={ratio} type="button" className={aspectRatio === ratio ? styles.selected : ""} onClick={() => setAspectRatio(ratio)}>{ratio}</button>)}</div></div>
 
         <button className={styles.generateButton} type="button" disabled={isGenerating} onClick={handleGenerate}>{isGenerating ? <><span className={styles.spinner} />正在生成演示结果</> : <><Play size={17} fill="currentColor" />开始生成</>}</button>
-      </section>
+        </section>
 
-      <section className={styles.historySection}>
+        <section className={styles.historySection}>
         <div className={styles.historyHeading}><div><span className={styles.eyebrow}>RECENT OUTPUTS</span><h2>历史记录</h2></div><div className={styles.dateInputs}><input aria-label="开始日期" type="date" /><span>→</span><input aria-label="结束日期" type="date" /></div></div>
         <div className={styles.historyTable} role="table">
           <div className={styles.historyRow} role="row"><strong>时间</strong><strong>指令内容</strong><span /></div>
           {tasks.slice(0, 6).map((task) => <Link key={task.id} className={styles.historyRow} to={`/history/${task.id}`}><time>{new Date(task.createdAt).toLocaleDateString("zh-CN")}</time><span>{task.prompt}</span><b>查看</b></Link>)}
         </div>
-      </section>
+        </section>
+      </div>
+
+      {hasInlineResults && <GenerationResultsPanel mode={mode} tasks={tasks} onEdit={editTask} onRegenerate={regenerateTask} />}
     </div>
   );
 }
