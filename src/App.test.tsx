@@ -7,4 +7,12 @@ describe("App", () => {
     render(<App />);
     expect(screen.getByRole("heading", { name: "批量文生图" })).toBeInTheDocument();
   });
+
+  it("使用 Hash 路由兼容 GitHub Pages 子路径刷新", () => {
+    render(<App />);
+    expect(screen.getByRole("link", { name: "批量图生图" })).toHaveAttribute(
+      "href",
+      "#/image-to-image",
+    );
+  });
 });

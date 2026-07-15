@@ -1,6 +1,7 @@
 import { ChevronDown, Minus, Play, Plus, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { assetPath } from "../../lib/assetPath";
 import { createMockTask, listTasks, saveTask } from "../tasks/taskRepository";
 import type { GenerationMode, GenerationTask, ImageType, RetouchMode } from "../tasks/types";
 import { GENERATION_CONFIG } from "./config";
@@ -16,10 +17,10 @@ const retouchModes: Array<{ value: RetouchMode; label: string }> = [
   { value: "watermark", label: "去水印" }, { value: "copy", label: "改文案" }, { value: "cutout", label: "抠图" },
 ];
 const modeResultImages: Record<GenerationMode, string[]> = {
-  "text-to-image": ["/demo/mug-hero.svg"],
-  "image-to-image": ["/demo/bowl-hero.svg", "/demo/bowl-detail.svg", "/demo/bowl-scene.svg"],
-  "ai-retouch": ["/demo/cat-cutout.svg"],
-  "outfit-swap": ["/demo/outfit-result.svg"],
+  "text-to-image": [assetPath("demo/mug-hero.svg")],
+  "image-to-image": [assetPath("demo/bowl-hero.svg"), assetPath("demo/bowl-detail.svg"), assetPath("demo/bowl-scene.svg")],
+  "ai-retouch": [assetPath("demo/cat-cutout.svg")],
+  "outfit-swap": [assetPath("demo/outfit-result.svg")],
 };
 
 interface GenerationPageProps { mode: GenerationMode; }

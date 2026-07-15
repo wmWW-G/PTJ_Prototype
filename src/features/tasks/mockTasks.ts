@@ -1,4 +1,5 @@
 import type { GenerationTask } from "./types";
+import { assetPath } from "../../lib/assetPath";
 
 /**
  * 原型首次打开时展示的演示历史。
@@ -17,7 +18,7 @@ export const DEMO_TASKS: GenerationTask[] = [
     sourceImages: [],
     modelImages: [],
     garmentImages: [],
-    resultImages: ["/demo/mug-hero.svg"],
+    resultImages: [assetPath("demo/mug-hero.svg")],
     status: "completed",
     createdAt: "2026-07-08T17:25:05+08:00",
   },
@@ -29,13 +30,13 @@ export const DEMO_TASKS: GenerationTask[] = [
     model: "Ptu1.0",
     aspectRatio: "1:1",
     quantity: 3,
-    sourceImages: ["/demo/bowl-source.svg"],
+    sourceImages: [assetPath("demo/bowl-source.svg")],
     modelImages: [],
     garmentImages: [],
     resultImages: [
-      "/demo/bowl-hero.svg",
-      "/demo/bowl-detail.svg",
-      "/demo/bowl-scene.svg",
+      assetPath("demo/bowl-hero.svg"),
+      assetPath("demo/bowl-detail.svg"),
+      assetPath("demo/bowl-scene.svg"),
     ],
     status: "completed",
     createdAt: "2026-06-28T19:24:09+08:00",
@@ -49,10 +50,10 @@ export const DEMO_TASKS: GenerationTask[] = [
     model: "Ptu1.0",
     aspectRatio: "1:1",
     quantity: 1,
-    sourceImages: ["/demo/cat-source.svg"],
+    sourceImages: [assetPath("demo/cat-source.svg")],
     modelImages: [],
     garmentImages: [],
-    resultImages: ["/demo/cat-cutout.svg"],
+    resultImages: [assetPath("demo/cat-cutout.svg")],
     status: "completed",
     createdAt: "2026-05-11T10:26:45+08:00",
   },

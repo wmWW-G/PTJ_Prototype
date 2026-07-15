@@ -6,7 +6,7 @@
 
 这里的“生图 Prompt 工作流”指：用户输入商品、卖点或图片生成需求后，工作流负责生成可交给图片生成模型使用的结构化 Prompt、负面 Prompt、图片角色、画面策略和相关说明。
 
-项目同时包含两部分：既有 Coze 生图 Prompt 工作流档案，以及用于演示批图匠核心业务流程的 React 高保真原型。原型当前使用 Mock 数据，后续可通过 Vercel Serverless Functions 接入 Dify。
+项目同时包含两部分：既有 Coze 生图 Prompt 工作流档案，以及用于演示批图匠核心业务流程的 React 高保真原型。原型前端由 GitHub Pages 托管，当前使用 Mock 数据；后续由 Vercel Serverless Functions 作为独立后端接入 Dify。
 
 ## 核心目标
 
@@ -77,6 +77,7 @@
 - `src/features/history/`：历史任务详情和后续操作。
 - `src/features/tasks/`：任务类型、演示数据和 LocalStorage 仓库。
 - `src/styles/`：全局样式和设计令牌。
+- `.github/workflows/deploy-pages.yml`：构建并发布 GitHub Pages 前端。
 
 后续如果创建文档或资料，建议按用途区分：
 

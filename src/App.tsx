@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { GenerationPage } from "./features/generation/GenerationPage";
 import { HistoryDetailPage } from "./features/history/HistoryDetailPage";
 import { AppShell } from "./layout/AppShell";
@@ -10,7 +10,7 @@ import { AppShell } from "./layout/AppShell";
  */
 export function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         <Route element={<AppShell />}>
           <Route index element={<Navigate replace to="/text-to-image" />} />
@@ -34,6 +34,6 @@ export function App() {
           <Route path="*" element={<Navigate replace to="/text-to-image" />} />
         </Route>
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   );
 }

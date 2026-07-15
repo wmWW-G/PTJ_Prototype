@@ -16,10 +16,14 @@ npm run test:run
 npm run build
 ```
 
-## 部署到 Vercel
+## 公网部署
 
-仓库已经包含 `vercel.json`。在 Vercel 导入 GitHub 仓库后，构建命令使用 `npm run build`，输出目录使用 `dist`。
+前端通过 `.github/workflows/deploy-pages.yml` 自动部署到 GitHub Pages。推送 `main` 分支后，GitHub Actions 会构建并发布 `dist`。
+
+公网地址：`https://wmww-g.github.io/PTJ_Prototype/`
+
+Vercel 不托管前端，只用于后续的 `/api/*` 后端函数。GitHub Pages 前端调用后端时，需使用 Vercel 项目的完整 HTTPS 域名。
 
 ## Dify 接入边界
 
-当前版本只使用 Mock 数据和 LocalStorage，不调用 Dify。后续接入时应通过 Vercel Serverless Functions 代理请求，Dify API Key 只能放在 Vercel 环境变量中，不能写入 `VITE_*` 变量或前端源码。
+当前版本只使用 Mock 数据和 LocalStorage，不调用 Dify。后续接入时应通过 Vercel Serverless Functions 代理请求，Dify API Key 只能放在 Vercel 环境变量中，不能写入 `VITE_*` 变量或前端源码。Vercel 后端还需显式允许 GitHub Pages 域名的 CORS 请求。
