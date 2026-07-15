@@ -1,15 +1,16 @@
 :root {
-  --brand-50: oklch(0.97 0.018 295);
-  --brand-100: oklch(0.93 0.04 295);
-  --brand-500: oklch(0.58 0.2 295);
-  --brand-600: oklch(0.51 0.22 295);
-  --brand-700: oklch(0.45 0.2 295);
-  --ink-950: oklch(0.22 0.025 275);
-  --ink-700: oklch(0.42 0.025 275);
-  --ink-500: oklch(0.58 0.02 275);
-  --line: oklch(0.9 0.015 280);
-  --canvas: oklch(0.965 0.012 275);
-  --surface: oklch(0.995 0.006 285);
+  /* 批图匠的主视觉统一使用橙色，不再使用原型初稿的紫色。 */
+  --brand-50: #fff7ed;
+  --brand-100: #ffedd5;
+  --brand-500: #f59e0b;
+  --brand-600: #f28c18;
+  --brand-700: #d96f08;
+  --ink-950: #24211f;
+  --ink-700: #57514c;
+  --ink-500: #847b73;
+  --line: #e9e3dc;
+  --canvas: #f8f7f5;
+  --surface: #ffffff;
   --success: oklch(0.63 0.16 155);
   --danger: oklch(0.6 0.2 25);
   --warning: oklch(0.72 0.15 75);
