@@ -3,6 +3,8 @@ import type { CreateTaskInput, GenerationTask } from "./types";
 
 /** LocalStorage 中保存原型历史任务的固定键名。 */
 export const STORAGE_KEY = "ptj.prototype.tasks.v1";
+/** 保存任务后用于通知应用外壳刷新的浏览器事件名。 */
+export const TASKS_UPDATED_EVENT = "ptj:tasks-updated";
 
 /**
  * 返回全新的演示任务副本，防止调用方意外修改模块常量。
@@ -58,6 +60,7 @@ export function saveTask(task: GenerationTask): GenerationTask {
   const tasks = listTasks().filter((item) => item.id !== task.id);
   tasks.unshift(task);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(TASKS_UPDATED_EVENT));
   console.info("[批图匠] 任务已保存", { id: task.id, status: task.status });
   return task;
 }

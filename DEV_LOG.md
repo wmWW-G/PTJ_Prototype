@@ -24,3 +24,7 @@
 - 确认第一阶段使用 React、TypeScript、Vite 制作高保真可交互原型，并部署到 Vercel。
 - 确认第一阶段不接入 Dify，不复刻登录、注册、充值、教程和账户页面。
 - 新增原型设计规格 `docs/superpowers/specs/2026-07-15-ptj-prototype-design.md`。
+- 初始化 React、TypeScript、Vite、Vitest 原型工程。
+- 完成四个核心生成页面、历史任务详情、LocalStorage 数据层和响应式布局。
+- 增加演示素材、上传校验、Mock 生成、重新编辑、再次生成和下载提示。
+- 配置 Vercel SPA 路由重写，并补充自动化测试和构建验证。

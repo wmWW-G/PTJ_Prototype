@@ -1,0 +1,27 @@
+:root {
+  --brand-50: oklch(0.97 0.018 295);
+  --brand-100: oklch(0.93 0.04 295);
+  --brand-500: oklch(0.58 0.2 295);
+  --brand-600: oklch(0.51 0.22 295);
+  --brand-700: oklch(0.45 0.2 295);
+  --ink-950: oklch(0.22 0.025 275);
+  --ink-700: oklch(0.42 0.025 275);
+  --ink-500: oklch(0.58 0.02 275);
+  --line: oklch(0.9 0.015 280);
+  --canvas: oklch(0.965 0.012 275);
+  --surface: oklch(0.995 0.006 285);
+  --success: oklch(0.63 0.16 155);
+  --danger: oklch(0.6 0.2 25);
+  --warning: oklch(0.72 0.15 75);
+  --shadow-soft: 0 12px 34px color-mix(in oklch, var(--brand-700) 9%, transparent);
+  --shadow-float: 0 18px 55px color-mix(in oklch, var(--ink-950) 12%, transparent);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --topbar-height: 64px;
+  font-family: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--ink-950);
+  background: var(--canvas);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}

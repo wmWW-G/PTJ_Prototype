@@ -1,0 +1,30 @@
+.shell { min-height: 100vh; padding-top: var(--topbar-height); }
+.topbar { position: fixed; z-index: 20; inset: 0 0 auto 0; height: var(--topbar-height); display: flex; align-items: center; gap: 26px; padding: 0 22px; background: color-mix(in oklch, var(--surface) 94%, transparent); border-bottom: 1px solid var(--line); backdrop-filter: blur(16px); }
+.topbar :global(.brand-mark) { display: flex; align-items: center; gap: 7px; min-width: 190px; font-size: 20px; letter-spacing: -.04em; }
+.topbar :global(.brand-mark__icon) { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; color: var(--surface); background: var(--brand-600); box-shadow: 0 8px 18px color-mix(in oklch, var(--brand-600) 25%, transparent); }
+.topbar :global(.brand-mark em) { padding: 2px 6px; border-radius: 5px; color: var(--brand-600); background: var(--brand-50); font-size: 11px; font-style: normal; letter-spacing: .04em; }
+.topnav { display: flex; align-items: center; gap: 4px; }
+.topnav a, .topnav button { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 12px; border: 0; border-radius: 8px; color: var(--ink-700); background: transparent; }
+.topnav a:hover, .topnav button:hover { color: var(--brand-600); background: var(--brand-50); }
+.accountStrip { margin-left: auto; display: flex; align-items: center; gap: 18px; color: var(--ink-700); font-size: 13px; }
+.accountStrip span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.accountStrip svg { color: var(--brand-500); }
+.demoAccount { padding-left: 18px; border-left: 1px solid var(--line); font-weight: 650; }
+.sidebar { position: fixed; z-index: 10; inset: var(--topbar-height) auto 0 0; width: 240px; overflow: hidden; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--line); }
+.toolNav { padding: 16px 12px 10px; display: grid; gap: 5px; }
+.toolNav a { position: relative; display: flex; align-items: center; gap: 11px; min-height: 44px; padding: 0 13px; border-radius: 10px; color: var(--ink-700); font-size: 14px; transition: transform .18s ease, background .18s ease, color .18s ease; }
+.toolNav a:hover { color: var(--brand-600); background: var(--brand-50); transform: translateX(2px); }
+.toolNav a.activeTool { color: var(--brand-700); background: var(--brand-100); font-weight: 700; }
+.toolNav a.activeTool::before { content: ""; position: absolute; left: 0; width: 3px; height: 20px; border-radius: 3px; background: var(--brand-600); }
+.runningState { display: flex; align-items: center; gap: 8px; margin: 4px 12px 14px; padding: 11px 13px; border: 1px dashed var(--line); border-radius: 10px; color: var(--ink-500); font-size: 12px; }
+.runningState svg { color: var(--brand-500); }
+.historyNav { min-height: 0; display: flex; flex: 1; flex-direction: column; border-top: 1px solid var(--line); }
+.sectionLabel { padding: 15px 18px 10px; color: var(--ink-500); font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+.historyList { overflow-y: auto; padding: 0 8px 24px; }
+.historyList a { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px; border-radius: 8px; color: var(--ink-700); font-size: 12px; }
+.historyList a:hover { background: var(--canvas); color: var(--brand-600); }
+.historyList a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.historyList time { flex: none; color: var(--ink-500); font-size: 10px; }
+.main { min-height: calc(100vh - var(--topbar-height)); margin-left: 240px; padding: 24px clamp(18px, 3vw, 44px) 60px; }
+@media (max-width: 980px) { .sidebar { width: 208px; } .main { margin-left: 208px; } .topbar :global(.brand-mark) { min-width: 166px; } .accountStrip span:not(.demoAccount) { display: none; } }
+@media (max-width: 760px) { .topbar { padding: 0 14px; } .topbar :global(.brand-mark) { min-width: auto; } .topnav, .demoAccount { display: none !important; } .sidebar { position: fixed; inset: var(--topbar-height) 0 auto; width: auto; height: 58px; border-right: 0; border-bottom: 1px solid var(--line); } .toolNav { display: flex; padding: 7px 9px; overflow-x: auto; } .toolNav a { flex: none; min-height: 42px; } .runningState, .historyNav { display: none; } .main { margin-left: 0; padding-top: 82px; } }
