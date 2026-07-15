@@ -1,4 +1,17 @@
 import type { GenerationMode } from "../tasks/types";
+import type { ImageType } from "../tasks/types";
+
+/**
+ * 四种电商图片类型每次生成的基础张数。
+ *
+ * 这是原站真实业务规则：主图和海报各 1 张，套图 6 张，详情图 5 张。
+ */
+export const IMAGE_TYPE_RESULT_COUNTS: Record<ImageType, number> = {
+  main: 1,
+  set: 6,
+  listing: 5,
+  poster: 1,
+};
 
 export interface GenerationPageConfig {
   title: string;

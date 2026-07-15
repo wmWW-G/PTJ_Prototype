@@ -2,9 +2,19 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import type { GenerationMode } from "../tasks/types";
+import { IMAGE_TYPE_RESULT_COUNTS } from "./config";
 import { GenerationPage } from "./GenerationPage";
 
 describe("GenerationPage", () => {
+  it("按真实业务规则设定四种图片类型的基础张数", () => {
+    expect(IMAGE_TYPE_RESULT_COUNTS).toEqual({
+      main: 1,
+      set: 6,
+      listing: 5,
+      poster: 1,
+    });
+  });
+
   it.each<[GenerationMode, string]>([
     ["text-to-image", "产品+卖点"],
     ["image-to-image", "上传商品参考图"],

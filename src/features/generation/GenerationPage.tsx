@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { assetPath } from "../../lib/assetPath";
 import { createMockTask, listTasks, saveTask } from "../tasks/taskRepository";
 import type { GenerationMode, GenerationTask, ImageType, RetouchMode } from "../tasks/types";
-import { GENERATION_CONFIG } from "./config";
+import { GENERATION_CONFIG, IMAGE_TYPE_RESULT_COUNTS } from "./config";
 import { GenerationResultsPanel } from "./components/GenerationResultsPanel";
 import { UploadZone } from "./components/UploadZone";
 import styles from "./GenerationPage.module.css";
@@ -23,6 +23,23 @@ const modeResultImages: Record<GenerationMode, string[]> = {
   "ai-retouch": [assetPath("demo/cat-cutout.svg")],
   "outfit-swap": [assetPath("demo/outfit-result.svg")],
 };
+
+/**
+ * 按图片类型和用户选择的生成数量构造 Mock 结果。
+ *
+ * 原型素材数量少于套图和详情图的业务张数，因此循环使用本地演示素材，
+ * 但输出数量严格遵循 1 / 6 / 5 / 1 的规则。
+ *
+ * @param mode 当前生成模式。
+ * @param imageType 主图、套图、详情图或海报。
+ * @param quantity 用户设置的生成份数，会乘以类型基础张数。
+ * @returns 张数符合业务规则的本地图片地址数组。
+ */
+function buildMockResultImages(mode: GenerationMode, imageType: ImageType, quantity: number): string[] {
+  const sources = modeResultImages[mode];
+  const resultCount = IMAGE_TYPE_RESULT_COUNTS[imageType] * Math.max(1, quantity);
+  return Array.from({ length: resultCount }, (_, index) => sources[index % sources.length]);
+}
 
 interface GenerationPageProps { mode: GenerationMode; }
 
@@ -94,7 +111,7 @@ export function GenerationPage({ mode }: GenerationPageProps) {
     refreshTasks();
     console.info("[批图匠] 开始模拟生成", { mode, taskId: task.id });
     window.setTimeout(() => {
-      const completed = { ...task, status: "completed" as const, resultImages: modeResultImages[mode].slice(0, Math.max(1, quantity)) };
+      const completed = { ...task, status: "completed" as const, resultImages: buildMockResultImages(mode, imageType, quantity) };
       saveTask(completed);
       refreshTasks();
       setIsGenerating(false);
