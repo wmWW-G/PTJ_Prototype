@@ -44,6 +44,46 @@ def _extract_text(response: dict[str, Any]) -> str:
     raise PromptPlanError("Prompt Planner 没有返回文本")
 
 
+def _decode_json_object(text: str) -> dict[str, Any]:
+    """从 Gemini 文本中解码一个 JSON 对象，并容忍 Markdown 代码围栏。
+
+    即使请求指定了 ``application/json``，模型偶发仍会输出
+    `````json ... ``` ``。先尝试完整 JSON，再扫描文本中的首个可解析对象；
+    只接受字典，避免把数组或普通值误当成业务结构。
+
+    Args:
+        text: Gemini 返回的文本内容。
+
+    Returns:
+        解码后的 JSON 对象。
+
+    Raises:
+        ValueError: 没有找到合法 JSON 对象时抛出。
+    """
+
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        first_newline = cleaned.find("\n")
+        if first_newline >= 0:
+            cleaned = cleaned[first_newline + 1 :]
+        if cleaned.rstrip().endswith("```"):
+            cleaned = cleaned.rstrip()[:-3].rstrip()
+
+    decoder = json.JSONDecoder()
+    candidate_offsets = [0]
+    candidate_offsets.extend(
+        index for index, character in enumerate(cleaned) if character == "{" and index != 0
+    )
+    for offset in candidate_offsets:
+        try:
+            value, _end = decoder.raw_decode(cleaned[offset:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    raise ValueError("模型文本中没有合法 JSON 对象")
+
+
 class PromptPlanner:
     """使用一个结构化文本模型完成商品分析和每版 Prompt 规划。"""
 
@@ -107,17 +147,30 @@ class PromptPlanner:
                     }
                 }
             )
-        response = await self._client.generate_content(
-            self._model,
-            {
-                "contents": [{"role": "user", "parts": parts}],
-                "generationConfig": {"responseMimeType": "application/json"},
-            },
-        )
-        try:
-            return ProductContext.model_validate_json(_extract_text(response))
-        except (ValidationError, ValueError) as exc:
-            raise PromptPlanError("商品分析返回的 JSON 不符合约定") from exc
+        for attempt in range(2):
+            request_parts = list(parts)
+            if attempt:
+                # 只修改文字说明，参考图仍保持原顺序和原内容，避免第二次分析漂移。
+                request_parts[0] = {
+                    "text": (
+                        f"{parts[0]['text']}\n上次结构错误。只输出一个合法 JSON 对象，"
+                        "不要 Markdown、解释或代码围栏。"
+                    )
+                }
+            response = await self._client.generate_content(
+                self._model,
+                {
+                    "contents": [{"role": "user", "parts": request_parts}],
+                    "generationConfig": {"responseMimeType": "application/json"},
+                },
+            )
+            try:
+                return ProductContext.model_validate(
+                    _decode_json_object(_extract_text(response))
+                )
+            except (ValidationError, ValueError, PromptPlanError):
+                continue
+        raise PromptPlanError("商品分析连续两次未返回符合约定的 JSON")
 
     async def plan_variant(
         self,
@@ -196,7 +249,9 @@ class PromptPlanner:
                 },
             )
             try:
-                plan = PromptPlan.model_validate_json(_extract_text(response))
+                plan = PromptPlan.model_validate(
+                    _decode_json_object(_extract_text(response))
+                )
             except (ValidationError, ValueError, PromptPlanError):
                 continue
             expected_indices = list(range(1, len(template.slots) + 1))
@@ -206,4 +261,3 @@ class PromptPlanner:
         raise PromptPlanError(
             f"Prompt Planner 连续两次未返回 {len(template.slots)} 个连续槽位"
         )
-

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from typing import Any, Mapping, Protocol, Sequence
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -22,6 +23,72 @@ GOOGLE_IMAGE_MODELS: dict[str, str] = {
     "nano_banana_2": "gemini-3.1-flash-image",
     "nano_banana_pro": "gemini-3-pro-image",
 }
+
+
+def _normalize_azure_openai_endpoint(endpoint: str) -> str:
+    """把 Foundry Project Endpoint 转成 GPT-Image 使用的资源 Endpoint。
+
+    Azure Foundry 项目页常给出
+    ``https://RESOURCE.services.ai.azure.com/api/projects/PROJECT``，但 Azure
+    OpenAI 图片接口要求 ``https://RESOURCE.openai.azure.com``。两者属于同一
+    Azure 资源，只是面向的 API 平面不同。已经是 OpenAI 资源地址时保持不变。
+
+    Args:
+        endpoint: Vercel 环境变量中的 Azure Endpoint。
+
+    Returns:
+        去除末尾斜杠、可直接拼接 ``/openai/...`` 的资源 Endpoint。
+
+    Raises:
+        不主动抛出异常；非标准地址保持原样，由 Azure 返回明确错误。
+    """
+
+    normalized = endpoint.strip().rstrip("/")
+    parsed = urlsplit(normalized)
+    hostname = parsed.hostname or ""
+    foundry_suffix = ".services.ai.azure.com"
+    if hostname.endswith(foundry_suffix):
+        resource_name = hostname.removesuffix(foundry_suffix)
+        if resource_name:
+            return f"{parsed.scheme or 'https'}://{resource_name}.openai.azure.com"
+    return normalized
+
+
+def _azure_error_message(response: httpx.Response) -> str:
+    """从 Azure 错误响应中提取不含凭证的诊断信息。
+
+    Args:
+        response: Azure 返回的非 2xx 响应。
+
+    Returns:
+        HTTP 状态、Azure 错误码、简短消息和请求 ID。不会包含请求 Header、
+        API Key、完整请求体或用户图片。
+
+    Raises:
+        不抛出异常；错误响应不是 JSON 时仅返回状态码和请求 ID。
+    """
+
+    parts = [f"Azure OpenAI 返回 HTTP {response.status_code}"]
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    if isinstance(payload, Mapping):
+        error = payload.get("error")
+        if isinstance(error, Mapping):
+            code = error.get("code")
+            message = error.get("message")
+            if isinstance(code, str) and code.strip():
+                parts.append(code.strip()[:120])
+            if isinstance(message, str) and message.strip():
+                # 压平换行并限制长度，既便于前端显示，也避免上游异常回显过多内容。
+                parts.append(" ".join(message.split())[:360])
+    request_id = response.headers.get("x-request-id") or response.headers.get(
+        "apim-request-id"
+    )
+    if request_id:
+        parts.append(f"request_id={request_id[:120]}")
+    return " · ".join(parts)
 
 
 class GenerateContentClient(Protocol):
@@ -210,7 +277,7 @@ class AzureImageProvider:
             不主动抛出异常。
         """
 
-        self._endpoint = endpoint.rstrip("/")
+        self._endpoint = _normalize_azure_openai_endpoint(endpoint)
         self._api_key = api_key
         self._deployment = deployment
         self._edit_api_version = edit_api_version
@@ -321,7 +388,7 @@ class AzureImageProvider:
             raise ProviderError("无法连接 Azure OpenAI", retryable=True) from exc
         if response.is_error:
             raise ProviderError(
-                f"Azure OpenAI 返回 HTTP {response.status_code}",
+                _azure_error_message(response),
                 status_code=response.status_code,
                 retryable=response.status_code in {408, 429, 500, 502, 503, 504},
             )

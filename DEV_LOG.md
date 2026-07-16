@@ -22,6 +22,10 @@
 - 为 Vercel 生产环境配置 GitHub Pages CORS，并在 GitHub Actions 中设置 `VITE_API_BASE_URL`，修复公网前端回退 `localhost:8000` 导致的 `Failed to fetch`。
 - Vercel Production 已补齐 Google、Azure 与 Blob 必需变量，`/api/health` 实测返回 `configured: true` 且无缺项；日志仅记录变量状态，不记录任何密钥值。
 - 使用 GitHub Pages 正式页面完成 Nano Banana 2、1K、1:1、单张主图真实 Smoke Test：Prompt 规划、图片生成、Blob 保存与前端渲染全链路成功，页面显示 `1 / 1`、`COMPLETED`，模型耗时约 10.6 秒。
+- 修复 Azure GPT-Image-2 在 Vercel 环境使用 Foundry Project Endpoint 时被错误拼接为图片 API 地址、立即返回 HTTP 400 的问题；后端现在会把 `*.services.ai.azure.com/api/projects/*` 规范化为对应的 `*.openai.azure.com` 资源地址。
+- Azure 非成功响应现在会安全提取 HTTP 状态、Azure 错误码、脱敏错误说明与 request ID，避免前端只显示没有诊断价值的 `HTTP 400`；不会回显 API Key、请求头、Prompt 或图片内容。
+- 增强 Gemini Prompt Planner 的结构化 JSON 容错：支持 Markdown JSON 代码围栏和前后说明文本；商品分析首次结构错误时会携带修复指令自动重试一次。
+- 使用 GitHub Pages 正式页面完成 Azure GPT-Image-2、1K、Low、1:1、单张主图真实 Smoke Test：不再立即返回 HTTP 400，最终成功返回并展示可下载图片。
 
 ## 2026-05-30
 

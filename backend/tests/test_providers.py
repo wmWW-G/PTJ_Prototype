@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import pytest
 
-from backend.domain import BinaryAsset, ImageSpec
+from backend.domain import BinaryAsset, ImageSpec, ProviderError
 from backend.providers import AzureImageProvider, GoogleImageProvider, ProviderRouter
 
 
@@ -108,6 +108,90 @@ async def test_azure_generate_uses_calculated_size_and_quality() -> None:
 
     await http_client.aclose()
     assert result.data == b"azure-image"
+
+
+@pytest.mark.asyncio
+async def test_azure_generate_normalizes_foundry_project_endpoint() -> None:
+    """Foundry 项目 URL 必须转换成 GPT-Image API 要求的资源 Endpoint。
+
+    用户从 Foundry 项目页复制的 URL 会带有 ``services.ai.azure.com/api/projects``；
+    图片 API 则要求同一资源的 ``openai.azure.com`` 主机。若直接拼接，Azure
+    会在真正生成前返回 HTTP 400。
+    """
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url).startswith(
+            "https://demo-resource.openai.azure.com/openai/v1/images/generations"
+        )
+        return httpx.Response(
+            200,
+            json={"data": [{"b64_json": base64.b64encode(b"azure-image").decode()}]},
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AzureImageProvider(
+        endpoint="https://demo-resource.services.ai.azure.com/api/projects/demo-project",
+        api_key="test-key",
+        deployment="gpt-image-2",
+        edit_api_version="2025-04-01",
+        http_client=http_client,
+    )
+
+    result = await provider.generate(
+        "商品主图",
+        ImageSpec(
+            model="gpt_image_2_azure",
+            aspect_ratio="1:1",
+            resolution="1K",
+            quality="low",
+        ),
+    )
+
+    await http_client.aclose()
+    assert result.data == b"azure-image"
+
+
+@pytest.mark.asyncio
+async def test_azure_error_exposes_safe_code_and_message() -> None:
+    """Azure 失败时应保留脱敏错误详情，不能只显示没有信息量的 HTTP 400。"""
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            headers={"x-request-id": "request-123"},
+            json={
+                "error": {
+                    "code": "invalid_request_error",
+                    "message": "The endpoint or deployment is invalid.",
+                }
+            },
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AzureImageProvider(
+        endpoint="https://example.openai.azure.com",
+        api_key="test-key",
+        deployment="gpt-image-2",
+        edit_api_version="2025-04-01",
+        http_client=http_client,
+    )
+
+    with pytest.raises(ProviderError) as captured:
+        await provider.generate(
+            "商品主图",
+            ImageSpec(
+                model="gpt_image_2_azure",
+                aspect_ratio="1:1",
+                resolution="1K",
+                quality="low",
+            ),
+        )
+
+    await http_client.aclose()
+    message = str(captured.value)
+    assert "invalid_request_error" in message
+    assert "endpoint or deployment is invalid" in message
+    assert "request-123" in message
 
 
 def test_provider_router_returns_registered_model() -> None:

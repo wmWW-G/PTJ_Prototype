@@ -13,7 +13,7 @@ from backend.templates import get_template
 class FakeGoogleClient:
     """按顺序返回预设 JSON 的 Google 客户端替身。"""
 
-    def __init__(self, replies: list[dict[str, Any]]) -> None:
+    def __init__(self, replies: list[dict[str, Any] | str]) -> None:
         self.replies = replies
         self.requests: list[tuple[str, dict[str, Any]]] = []
 
@@ -22,9 +22,10 @@ class FakeGoogleClient:
 
         self.requests.append((model, payload))
         reply = self.replies.pop(0)
+        text = reply if isinstance(reply, str) else json.dumps(reply, ensure_ascii=False)
         return {
             "candidates": [
-                {"content": {"parts": [{"text": json.dumps(reply, ensure_ascii=False)}]}}
+                {"content": {"parts": [{"text": text}]}}
             ]
         }
 
@@ -45,6 +46,45 @@ def _valid_plan(count: int) -> dict[str, Any]:
             for index in range(1, count + 1)
         ],
     }
+
+
+def _valid_context() -> dict[str, Any]:
+    """创建最小合法商品分析结果。"""
+
+    return {
+        "product_name": "白色马克杯",
+        "product_description": "一只白色陶瓷马克杯",
+        "selling_points": ["简约", "陶瓷质感"],
+        "visual_style": "高级电商摄影",
+        "must_keep": ["白色杯身", "弧形手柄"],
+        "prohibited_claims": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_analyze_product_accepts_json_inside_markdown_fence() -> None:
+    """Gemini 偶发包裹 JSON 代码围栏时仍应解析成功。"""
+
+    raw_reply = f"```json\n{json.dumps(_valid_context(), ensure_ascii=False)}\n```"
+    client = FakeGoogleClient([raw_reply])
+    planner = PromptPlanner(client=client, model="gemini-3.5-flash")
+
+    context = await planner.analyze_product(user_requirement="白色陶瓷马克杯")
+
+    assert context.product_name == "白色马克杯"
+
+
+@pytest.mark.asyncio
+async def test_analyze_product_retries_invalid_json_once() -> None:
+    """首次结构化输出损坏时应修复一次，不能立即终止整套生图。"""
+
+    client = FakeGoogleClient(["这不是 JSON", _valid_context()])
+    planner = PromptPlanner(client=client, model="gemini-3.5-flash")
+
+    context = await planner.analyze_product(user_requirement="白色陶瓷马克杯")
+
+    assert context.product_name == "白色马克杯"
+    assert len(client.requests) == 2
 
 
 @pytest.mark.asyncio
@@ -91,4 +131,3 @@ async def test_planner_rejects_wrong_slot_count_after_retry() -> None:
             target_model="nano_banana_2",
             variant_index=1,
         )
-
