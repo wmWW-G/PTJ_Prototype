@@ -20,7 +20,8 @@
 - 最终为 health、capabilities、uploads、generations/stream 建立精确的 `api/**/*.py` 薄入口，全部复用 `backend.app:app`，并恢复 300 秒 Python Function 配置；不复制任何业务逻辑。
 - 创建并部署 Vercel 项目 `ptj-image-api`，稳定 API 地址为 `https://ptj-image-api.vercel.app`。
 - 为 Vercel 生产环境配置 GitHub Pages CORS，并在 GitHub Actions 中设置 `VITE_API_BASE_URL`，修复公网前端回退 `localhost:8000` 导致的 `Failed to fetch`。
-- 当前 Vercel 项目尚未添加 Google、Azure 和 Blob 密钥；网络连通后会返回明确的服务端配置缺失提示，直到密钥补齐。
+- Vercel Production 已补齐 Google、Azure 与 Blob 必需变量，`/api/health` 实测返回 `configured: true` 且无缺项；日志仅记录变量状态，不记录任何密钥值。
+- 使用 GitHub Pages 正式页面完成 Nano Banana 2、1K、1:1、单张主图真实 Smoke Test：Prompt 规划、图片生成、Blob 保存与前端渲染全链路成功，页面显示 `1 / 1`、`COMPLETED`，模型耗时约 10.6 秒。
 
 ## 2026-05-30
 
