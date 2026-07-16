@@ -20,12 +20,40 @@ export interface GenerationTask {
   prompt: string;
   model: string;
   aspectRatio: string;
+  /** 服务器模板 ID，决定一版图片的固定槽位。 */
+  templateId: string;
+  /** 统一分辨率档位，由后端 Adapter 转换为供应商参数。 */
+  resolution: "1K" | "2K" | "4K";
+  /** Azure 独立质量参数；Google 模型会忽略。 */
+  quality: "low" | "medium" | "high";
+  /** 完整生成几版，不是单版图片张数。 */
+  variantCount: number;
   quantity: number;
   sourceImages: string[];
   modelImages: string[];
   garmentImages: string[];
   resultImages: string[];
-  status: "queued" | "generating" | "completed" | "failed";
+  /** 流式任务的逐张结果，便于历史页保留真实元数据。 */
+  liveImages: Array<{
+    variantIndex: number;
+    imageIndex: number;
+    role: string;
+    status: string;
+    imageUrl?: string;
+    actualSize?: string;
+    retryCount?: number;
+    error?: string;
+  }>;
+  /** Azure 动态换算后的实际尺寸，例如 2880x2880。 */
+  actualSize?: string;
+  /** 不含密钥的供应商请求元数据。 */
+  providerMetadata?: Record<string, unknown>;
+  status:
+    | "queued"
+    | "generating"
+    | "completed"
+    | "partial_success"
+    | "failed";
   createdAt: string;
 }
 

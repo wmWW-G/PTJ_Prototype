@@ -16,7 +16,48 @@ function cloneDemoTasks(): GenerationTask[] {
     modelImages: [...task.modelImages],
     garmentImages: [...task.garmentImages],
     resultImages: [...task.resultImages],
+    liveImages: task.liveImages.map((image) => ({ ...image })),
   })).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** 图片类型到默认服务器模板的稳定映射。 */
+const DEFAULT_TEMPLATE_IDS: Record<GenerationTask["imageType"], string> = {
+  main: "main_01",
+  set: "product_set_01",
+  listing: "listing_01",
+  poster: "poster_01",
+};
+
+/**
+ * 为旧 LocalStorage 任务补齐真实生图字段。
+ *
+ * @param task 可能来自 v2 旧结构的不完整任务。
+ * @returns 满足当前 GenerationTask 接口的兼容对象。
+ */
+function normalizeTask(task: Partial<GenerationTask> & Pick<GenerationTask, "id" | "mode" | "prompt" | "imageType" | "createdAt">): GenerationTask {
+  return {
+    id: task.id,
+    mode: task.mode,
+    imageType: task.imageType,
+    retouchMode: task.retouchMode,
+    prompt: task.prompt,
+    model: task.model ?? "Ptu1.0",
+    aspectRatio: task.aspectRatio ?? "1:1",
+    templateId: task.templateId ?? DEFAULT_TEMPLATE_IDS[task.imageType],
+    resolution: task.resolution ?? "2K",
+    quality: task.quality ?? "medium",
+    variantCount: task.variantCount ?? task.quantity ?? 1,
+    quantity: task.quantity ?? 1,
+    sourceImages: task.sourceImages ?? [],
+    modelImages: task.modelImages ?? [],
+    garmentImages: task.garmentImages ?? [],
+    resultImages: task.resultImages ?? [],
+    liveImages: task.liveImages ?? [],
+    actualSize: task.actualSize,
+    providerMetadata: task.providerMetadata,
+    status: task.status ?? "queued",
+    createdAt: task.createdAt,
+  };
 }
 
 /**
@@ -30,9 +71,9 @@ export function listTasks(): GenerationTask[] {
   if (!raw) return cloneDemoTasks();
 
   try {
-    const parsed = JSON.parse(raw) as GenerationTask[];
+    const parsed = JSON.parse(raw) as Array<Partial<GenerationTask> & Pick<GenerationTask, "id" | "mode" | "prompt" | "imageType" | "createdAt">>;
     if (!Array.isArray(parsed)) throw new TypeError("任务存储不是数组");
-    return [...parsed].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return parsed.map(normalizeTask).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   } catch (error) {
     console.warn("[批图匠] 历史任务读取失败，已回退到演示数据", error);
     return cloneDemoTasks();
@@ -80,11 +121,18 @@ export function createMockTask(input: CreateTaskInput): GenerationTask {
     prompt: input.prompt,
     model: input.model ?? "Ptu1.0",
     aspectRatio: input.aspectRatio ?? "1:1",
+    templateId: input.templateId ?? DEFAULT_TEMPLATE_IDS[input.imageType ?? "main"],
+    resolution: input.resolution ?? "2K",
+    quality: input.quality ?? "medium",
+    variantCount: input.variantCount ?? input.quantity ?? 1,
     quantity: input.quantity ?? 1,
     sourceImages: input.sourceImages ?? [],
     modelImages: input.modelImages ?? [],
     garmentImages: input.garmentImages ?? [],
     resultImages: input.resultImages ?? [],
+    liveImages: input.liveImages ?? [],
+    actualSize: input.actualSize,
+    providerMetadata: input.providerMetadata,
     status: "generating",
     createdAt: new Date().toISOString(),
   };

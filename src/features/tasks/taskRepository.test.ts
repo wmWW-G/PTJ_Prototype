@@ -21,4 +21,35 @@ describe("taskRepository", () => {
     saveTask(task);
     expect(getTask(task.id)?.prompt).toBe("马克杯");
   });
+
+  it("读取旧版任务时补齐真实生图字段", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([
+        {
+          id: "old-task",
+          mode: "text-to-image",
+          imageType: "main",
+          prompt: "旧任务",
+          model: "Ptu1.0",
+          aspectRatio: "1:1",
+          quantity: 1,
+          sourceImages: [],
+          modelImages: [],
+          garmentImages: [],
+          resultImages: [],
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ]),
+    );
+
+    expect(getTask("old-task")).toMatchObject({
+      templateId: "main_01",
+      resolution: "2K",
+      quality: "medium",
+      variantCount: 1,
+      liveImages: [],
+    });
+  });
 });
