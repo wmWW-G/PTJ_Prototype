@@ -90,7 +90,14 @@ def _build_orchestrator(settings: Settings, storage: BlobStorage) -> GenerationO
         limiters={
             "nano_banana_2": AsyncRateLimiter(max_concurrency=4, requests_per_minute=60),
             "nano_banana_pro": AsyncRateLimiter(max_concurrency=3, requests_per_minute=40),
-            "gpt_image_2_azure": AsyncRateLimiter(max_concurrency=4, requests_per_minute=60),
+            # 线上实测 East US 2 可稳定处理三路图片请求；其余槽位排队可避免
+            # 五张副图同时冲击配额，也能在 Vercel 300 秒时限内完成整套图片。
+            "gpt_image_2_azure": AsyncRateLimiter(
+                max_concurrency=3,
+                requests_per_minute=6,
+                retry_delays=(10.0, 30.0),
+                retry_jitter_seconds=1.5,
+            ),
         },
     )
 

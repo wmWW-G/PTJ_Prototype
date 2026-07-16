@@ -81,11 +81,12 @@ export function LiveResultsPanel({ state, expectedCount }: LiveResultsPanelProps
                 .map((image) => {
                   const meta = statusMeta(image);
                   const StatusIcon = meta.icon;
+                  const displayTitle = image.title || roleLabels[image.role] || image.role;
                   return (
                     <article key={image.index} className={`${styles.liveCard} ${styles[`live_${image.status}`] ?? ""}`}>
                       <div className={styles.liveImageStage}>
                         {image.imageUrl ? (
-                          <img src={image.imageUrl} alt={roleLabels[image.role] ?? image.role} />
+                          <img src={image.imageUrl} alt={displayTitle} />
                         ) : (
                           <StatusIcon size={25} />
                         )}
@@ -97,7 +98,7 @@ export function LiveResultsPanel({ state, expectedCount }: LiveResultsPanelProps
                         )}
                       </div>
                       <div className={styles.liveCardBody}>
-                        <strong>{roleLabels[image.role] ?? image.role}</strong>
+                        <strong>{displayTitle}</strong>
                         <span className={styles.liveStatus}><StatusIcon size={12} />{meta.label}</span>
                         <dl>
                           <div><dt>尺寸</dt><dd>{image.actualSize ?? "—"}</dd></div>
@@ -116,7 +117,7 @@ export function LiveResultsPanel({ state, expectedCount }: LiveResultsPanelProps
                 <p>{variant.plan.global_consistency_prompt}</p>
                 <ol>
                   {variant.plan.image_prompts.map((prompt) => (
-                    <li key={prompt.index}><strong>{roleLabels[prompt.role] ?? prompt.role}</strong>{prompt.prompt}</li>
+                    <li key={prompt.index}><strong>{prompt.title || roleLabels[prompt.role] || prompt.role}</strong>{prompt.prompt}</li>
                   ))}
                 </ol>
               </details>
@@ -127,4 +128,3 @@ export function LiveResultsPanel({ state, expectedCount }: LiveResultsPanelProps
     </aside>
   );
 }
-

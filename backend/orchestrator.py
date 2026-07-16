@@ -91,6 +91,7 @@ class _ImageExecutionResult:
 
     image_index: int
     role: str
+    title: str
     success: bool
     elapsed_ms: int
     image_url: str | None = None
@@ -193,6 +194,7 @@ class GenerationOrchestrator:
                 _ImageExecutionResult(
                     image_index=image_prompt.index,
                     role=image_prompt.role,
+                    title=image_prompt.title,
                     success=True,
                     elapsed_ms=int((time.monotonic() - started) * 1000),
                     image_url=image_url,
@@ -215,6 +217,7 @@ class GenerationOrchestrator:
                 _ImageExecutionResult(
                     image_index=image_prompt.index,
                     role=image_prompt.role,
+                    title=image_prompt.title,
                     success=False,
                     elapsed_ms=int((time.monotonic() - started) * 1000),
                     error=str(exc),
@@ -269,6 +272,7 @@ class GenerationOrchestrator:
                     image_url=result.image_url,
                     data={
                         "role": result.role,
+                        "title": result.title,
                         "elapsed_ms": result.elapsed_ms,
                         "retry_count": len(result.retries),
                         "actual_width": result.actual_width,
@@ -287,6 +291,7 @@ class GenerationOrchestrator:
                     message=result.error,
                     data={
                         "role": result.role,
+                        "title": result.title,
                         "elapsed_ms": result.elapsed_ms,
                         "retry_count": len(result.retries),
                     },
@@ -383,6 +388,7 @@ class GenerationOrchestrator:
                         variant_index=variant_index,
                         image_index=anchor_prompt.index,
                         status="generating",
+                        data={"role": anchor_prompt.role, "title": anchor_prompt.title},
                     )
                     anchor_result, anchor_binary = await self._execute_image(
                         job_id=job_id,
@@ -431,7 +437,7 @@ class GenerationOrchestrator:
                         variant_index=variant_index,
                         image_index=image_prompt.index,
                         status="generating",
-                        data={"role": image_prompt.role},
+                        data={"role": image_prompt.role, "title": image_prompt.title},
                     )
                     tasks.append(
                         asyncio.create_task(

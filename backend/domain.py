@@ -45,6 +45,7 @@ class ProviderError(RuntimeError):
         *,
         status_code: int | None = None,
         retryable: bool = False,
+        retry_after_seconds: float | None = None,
     ) -> None:
         """保存脱敏错误信息及重试属性。
 
@@ -52,6 +53,7 @@ class ProviderError(RuntimeError):
             message: 脱敏后的错误信息。
             status_code: 可选的上游 HTTP 状态码。
             retryable: 是否允许编排器重试。
+            retry_after_seconds: 上游建议等待的秒数；没有建议时为 ``None``。
 
         Returns:
             无。
@@ -63,6 +65,7 @@ class ProviderError(RuntimeError):
         super().__init__(message)
         self.status_code = status_code
         self.retryable = retryable
+        self.retry_after_seconds = retry_after_seconds
 
 
 class ReferenceAsset(BaseModel):
@@ -140,6 +143,7 @@ class ImagePrompt(BaseModel):
 
     index: int = Field(ge=1)
     role: str
+    title: str = ""
     prompt: str = Field(min_length=1)
     negative_prompt: str = ""
     visible_text: list[str] = Field(default_factory=list)

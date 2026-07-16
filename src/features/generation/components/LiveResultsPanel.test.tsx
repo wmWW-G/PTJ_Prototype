@@ -19,6 +19,7 @@ describe("LiveResultsPanel", () => {
             1: {
               index: 1,
               role: "main_image",
+              title: "企业总览",
               status: "completed",
               imageUrl: "https://blob.example/1.png",
               actualSize: "2048x2048",
@@ -32,10 +33,9 @@ describe("LiveResultsPanel", () => {
 
     render(<LiveResultsPanel state={state} expectedCount={6} />);
 
-    expect(screen.getByText("商品主图")).toBeInTheDocument();
+    expect(screen.getByText("企业总览")).toBeInTheDocument();
     expect(screen.getByText("2048x2048")).toBeInTheDocument();
     expect(screen.getByText(/重试 1 次/)).toBeInTheDocument();
     expect(screen.getByText("1 / 6")).toBeInTheDocument();
   });
 });
-

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
@@ -24,6 +25,7 @@ class AsyncRateLimiter:
         max_concurrency: int,
         requests_per_minute: int,
         retry_delays: tuple[float, float] = (1.0, 2.5),
+        retry_jitter_seconds: float = 0.0,
     ) -> None:
         """创建限流器。
 
@@ -31,6 +33,7 @@ class AsyncRateLimiter:
             max_concurrency: 同一时刻允许发往该模型的最大请求数。
             requests_per_minute: 最近 60 秒内允许启动的请求数。
             retry_delays: 第一次和第二次重试前的基础等待秒数。
+            retry_jitter_seconds: 每次重试额外增加的随机错峰秒数上限。
 
         Returns:
             无。
@@ -45,9 +48,12 @@ class AsyncRateLimiter:
             raise ValueError("requests_per_minute 必须大于 0")
         if len(retry_delays) != 2 or any(delay < 0 for delay in retry_delays):
             raise ValueError("retry_delays 必须包含两个非负等待时间")
+        if retry_jitter_seconds < 0:
+            raise ValueError("retry_jitter_seconds 不能小于 0")
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self._requests_per_minute = requests_per_minute
         self._retry_delays = retry_delays
+        self._retry_jitter_seconds = retry_jitter_seconds
         self._timestamps: deque[float] = deque()
         self._window_lock = asyncio.Lock()
 
@@ -105,10 +111,16 @@ class AsyncRateLimiter:
             except ProviderError as exc:
                 if not exc.retryable or attempt >= 2:
                     raise
-                delay = self._retry_delays[attempt]
+                # 429 必须优先遵守 Azure 返回的 retry-after-ms；随机错峰可避免
+                # 同一批并发请求在同一毫秒再次撞上限流。
+                delay = max(
+                    self._retry_delays[attempt],
+                    exc.retry_after_seconds or 0.0,
+                )
+                if self._retry_jitter_seconds:
+                    delay += random.uniform(0.0, self._retry_jitter_seconds)
                 if on_retry is not None:
                     await on_retry(attempt + 1, exc, delay)
                 if delay:
                     await asyncio.sleep(delay)
         raise RuntimeError("不可达的重试状态")
-

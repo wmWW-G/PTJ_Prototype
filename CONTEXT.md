@@ -31,7 +31,7 @@
 - `backend/planner.py`：商品分析和结构化 Prompt 计划。
 - `backend/providers.py`：Nano Banana 2、Nano Banana Pro、Azure GPT-Image-2 Adapter。
 - `backend/sizing.py`：Azure 动态实际尺寸换算。
-- `backend/limiter.py`：模型并发、RPM 和临时错误重试。
+- `backend/limiter.py`：模型并发、RPM、供应商 `retry-after` 退避和错峰重试。
 - `backend/orchestrator.py`：有图全并发、无图基准图后分发、多方案循环。
 - `backend/storage.py`：Vercel Blob 上传、保存、URL 白名单和 SSRF 防护。
 - `src/features/generation/api.ts`：上传、Capabilities 和 NDJSON 客户端。
@@ -70,7 +70,9 @@ job_started → planning → plan_ready → variant_started
 
 不要把密钥写入前端、`VITE_*`、源码或日志；不要让后端下载任意用户 URL；不要把图 2 继续传给图 3，所有副图只共享原图或同版图 1。
 
-`visual_template_id` 只决定视觉方向和信息组织，`template_id` 仍然是张数与槽位职责的唯一来源。`supplemental_info` 全部选填；空字段代表未知，Planner 不得补写认证、产能、客户等事实。
+`visual_template_id` 决定视觉方向和每个槽位的展示主题，`template_id` 仍然是张数与稳定 role 的唯一来源。Planner 会把视觉模板的 `role_highlights` 按顺序绑定到各槽位；例如企业实力六图固定为企业总览、仓储与交付、品控流程、研发与定制、认证背书、产能与服务。`supplemental_info` 全部选填；空字段代表未知，Planner 不得补写认证、产能、客户等事实。
+
+Azure GPT-Image-2 当前最多三路并发，剩余槽位等待前一批完成，避免一版套图的五张副图同时冲击 East US 2 配额。429 必须优先遵守 Azure `retry-after-ms` / `Retry-After`，再叠加错峰延迟；不要重新提高到四路并发，除非已确认部署实际 RPM 和并发容量。
 
 企业实力模板的预览素材位于 `public/demo/generated/ai-supplier-*.jpg`，均为项目内通过 ImageGen 生成的原创演示图。不要重新使用用户提供的其他店铺截图或从截图裁切素材。
 

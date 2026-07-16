@@ -72,3 +72,39 @@ async def test_non_retryable_error_fails_immediately() -> None:
         await limiter.run(operation)
     assert calls == 1
 
+
+@pytest.mark.asyncio
+async def test_limiter_prefers_provider_retry_after(monkeypatch) -> None:
+    """Azure 指定的等待时间必须覆盖过短的本地重试延迟。"""
+
+    sleeps: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        """记录等待时长，避免单元测试真实休眠。"""
+
+        sleeps.append(seconds)
+
+    monkeypatch.setattr("backend.limiter.asyncio.sleep", fake_sleep)
+    limiter = AsyncRateLimiter(
+        max_concurrency=1,
+        requests_per_minute=1000,
+        retry_delays=(1.0, 2.5),
+    )
+    calls = 0
+
+    async def operation() -> str:
+        """首次返回带退避建议的 429，第二次成功。"""
+
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ProviderError(
+                "触发限流",
+                status_code=429,
+                retryable=True,
+                retry_after_seconds=8.0,
+            )
+        return "ok"
+
+    assert await limiter.run(operation) == "ok"
+    assert sleeps == [8.0]

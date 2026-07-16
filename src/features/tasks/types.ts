@@ -42,6 +42,8 @@ export interface GenerationTask {
     variantIndex: number;
     imageIndex: number;
     role: string;
+    /** 视觉模板为当前图片指定的用户可读职责名称。 */
+    title?: string;
     status: string;
     imageUrl?: string;
     actualSize?: string;

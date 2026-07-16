@@ -91,6 +91,36 @@ def _azure_error_message(response: httpx.Response) -> str:
     return " · ".join(parts)
 
 
+def _azure_retry_after_seconds(response: httpx.Response) -> float | None:
+    """读取 Azure 429 响应建议的退避时间。
+
+    Args:
+        response: Azure 返回的 HTTP 响应。
+
+    Returns:
+        建议等待秒数；响应没有合法提示时返回 ``None``。
+
+    Raises:
+        不抛出异常；异常 Header 会被安全忽略。
+    """
+
+    candidates = (
+        (response.headers.get("retry-after-ms"), 0.001),
+        (response.headers.get("retry-after"), 1.0),
+    )
+    for raw_value, scale in candidates:
+        if raw_value is None:
+            continue
+        try:
+            seconds = float(raw_value) * scale
+        except ValueError:
+            continue
+        if seconds >= 0:
+            # 防止异常上游值让 Vercel Function 无限等待。
+            return min(seconds, 120.0)
+    return None
+
+
 class GenerateContentClient(Protocol):
     """Google 图片 Adapter 需要的最小客户端接口。"""
 
@@ -388,6 +418,7 @@ class AzureImageProvider:
                 _azure_error_message(response),
                 status_code=response.status_code,
                 retryable=response.status_code in {408, 429, 500, 502, 503, 504},
+                retry_after_seconds=_azure_retry_after_seconds(response),
             )
         try:
             return response.json()

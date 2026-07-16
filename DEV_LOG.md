@@ -2,6 +2,9 @@
 
 ## 2026-07-16
 
+- 修复企业实力套图仍沿用标准商品套图主题的问题：Prompt Planner 现在把视觉模板的 `role_highlights` 逐张绑定到固定槽位，企业实力六图明确为企业总览、仓储与交付、品控流程、研发与定制、认证背书、产能与服务；前端结果卡和 Prompt 详情同步显示这些动态职责名称。
+- 修复 GPT-Image-2 套图突发并发导致的 Azure 429：并发从 4 降为 3，其余槽位排队，RPM 保护从错误的 60 调整为 6，本地退避改为 10/30 秒并加入随机错峰；Provider 读取 Azure `retry-after-ms` / `Retry-After`，限流器优先按上游建议等待。
+- 新增企业实力槽位映射、动态职责标题、Azure 429 Header 解析和 Provider 退避优先级测试。
 - 修复 GPT-Image-2 套图仅第一张成功的问题：Azure 纯生成原本走 v1 接口，后续编辑却错误使用 deployment 路径和无效的 `2025-04-01` 版本，导致所有副图立即返回 HTTP 404；现已统一为 `/openai/v1/images/edits?api-version=preview`，并通过 multipart `model` 与重复 `image` 字段传递部署名和参考图。
 - 新增 Azure v1 图片编辑请求映射回归测试，固定检查 URL、multipart 类型、模型字段和参考图字段，防止再次出现“首图成功、后续全失败”。
 - 将文生图和图生图从工作流原型升级为 React + FastAPI 真实生图原型；AI 修图和模特换装继续使用 Mock。

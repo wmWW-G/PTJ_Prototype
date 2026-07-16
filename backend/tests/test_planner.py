@@ -141,7 +141,7 @@ async def test_planner_includes_visual_template_and_verified_optional_informatio
     client = FakeGoogleClient([_valid_plan(6)])
     planner = PromptPlanner(client=client, model="gemini-3.5-flash")
 
-    await planner.plan_variant(
+    plan = await planner.plan_variant(
         template=get_template("product_set_01"),
         visual_template=get_visual_template("supplier_strength"),
         supplemental_info={
@@ -168,3 +168,22 @@ async def test_planner_includes_visual_template_and_verified_optional_informatio
         "certifications": "FSC、BSCI、EN71",
     }
     assert "可见文字只能来自用户明确提供的内容" in instruction["rules"]
+    assert [item["title"] for item in instruction["slot_visual_directions"]] == [
+        "企业总览",
+        "仓储与交付",
+        "品控流程",
+        "研发与定制",
+        "认证背书",
+        "产能与服务",
+    ]
+    assert [item.title for item in plan.image_prompts] == [
+        "企业总览",
+        "仓储与交付",
+        "品控流程",
+        "研发与定制",
+        "认证背书",
+        "产能与服务",
+    ]
+    assert [item.role for item in plan.image_prompts] == [
+        slot.role for slot in get_template("product_set_01").slots
+    ]

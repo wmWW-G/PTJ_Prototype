@@ -192,6 +192,41 @@ async def test_azure_error_exposes_safe_code_and_message() -> None:
 
 
 @pytest.mark.asyncio
+async def test_azure_429_exposes_retry_after_milliseconds() -> None:
+    """Azure 429 的 retry-after-ms 必须转换为秒并交给限流器。"""
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            429,
+            headers={"retry-after-ms": "2500"},
+            json={"error": {"code": "rate_limit_exceeded", "message": "slow down"}},
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AzureImageProvider(
+        endpoint="https://example.openai.azure.com",
+        api_key="test-key",
+        deployment="gpt-image-2",
+        http_client=http_client,
+    )
+
+    with pytest.raises(ProviderError) as captured:
+        await provider.generate(
+            "商品主图",
+            ImageSpec(
+                model="gpt_image_2_azure",
+                aspect_ratio="1:1",
+                resolution="1K",
+                quality="low",
+            ),
+        )
+
+    await http_client.aclose()
+    assert captured.value.retryable is True
+    assert captured.value.retry_after_seconds == 2.5
+
+
+@pytest.mark.asyncio
 async def test_azure_edit_uses_v1_endpoint_and_model_form_field() -> None:
     """Azure 编辑必须与已验证的生成调用统一使用 v1 图片接口。
 

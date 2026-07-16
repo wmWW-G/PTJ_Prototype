@@ -8,6 +8,8 @@ export type LiveImageModel =
 export interface PlannedImagePrompt {
   index: number;
   role: string;
+  /** 当前视觉模板为该槽位指定的用户可读职责名称。 */
+  title?: string;
   prompt: string;
   negative_prompt?: string;
   visible_text?: string[];
@@ -119,6 +121,8 @@ export interface GenerationCapabilities {
 export interface LiveImageState {
   index: number;
   role: string;
+  /** 优先于通用 role 映射展示，例如“研发与定制”。 */
+  title?: string;
   status: "waiting" | "generating" | "retrying" | "completed" | "failed";
   imageUrl?: string;
   actualSize?: string;

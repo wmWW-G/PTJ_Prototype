@@ -84,6 +84,7 @@ export function reduceGenerationEvent(
         variant.images[prompt.index] = {
           index: prompt.index,
           role: prompt.role,
+          title: prompt.title,
           status: "waiting",
           retryCount: 0,
         };
@@ -122,6 +123,7 @@ export function reduceGenerationEvent(
     const variant = cloneVariant(state, event.variant_index);
     const role = String(event.data?.role ?? "image");
     const image = cloneImage(variant, event.image_index, role);
+    if (typeof event.data?.title === "string") image.title = event.data.title;
 
     if (event.type.endsWith("_started")) image.status = "generating";
     if (event.type === "image_retrying") {
@@ -183,4 +185,3 @@ export function reduceGenerationEvent(
   }
   return state;
 }
-

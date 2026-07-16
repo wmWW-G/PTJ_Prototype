@@ -225,6 +225,25 @@ class PromptPlanner:
             for key, value in (supplemental_info or {}).items()
             if value.strip()
         }
+        role_highlights = (
+            visual_template.role_highlights if visual_template is not None else []
+        )
+        # 把视觉模板的职责逐张绑定到固定槽位。结构模板仍决定数量和稳定 role，
+        # 但“企业实力”等视觉模板可以覆盖标准套图的默认业务主题。
+        slot_visual_directions = [
+            {
+                "index": slot.index,
+                "role": slot.role,
+                "title": (
+                    role_highlights[position]
+                    if position < len(role_highlights)
+                    else slot.title
+                ),
+                "base_objective": slot.objective,
+                "base_composition": slot.composition,
+            }
+            for position, slot in enumerate(template.slots)
+        ]
         base_instruction = {
             "task": "生成可直接交给图片模型的电商生图计划",
             "rules": [
@@ -233,6 +252,9 @@ class PromptPlanner:
                 "不得虚构参数、认证、销量、产能、客户或测试结果",
                 "可见文字只能来自用户明确提供的内容",
                 "每个 prompt 必须独立完整，并包含全局一致性要求",
+                "每张图必须严格覆盖 slot_visual_directions 中对应的 title，且六张主题不得重复",
+                "slot_visual_directions 的 title 优先于 template.slots 的默认主题，但不得改变 index 和 role",
+                "缺少企业事实时使用不含数字、认证、品牌和客户名称的通用流程画面，不得编造背书",
             ],
             "variant_index": variant_index,
             "language": language,
@@ -240,6 +262,7 @@ class PromptPlanner:
             "user_requirement": user_requirement,
             "product_context": context.model_dump(),
             "template": template.model_dump(),
+            "slot_visual_directions": slot_visual_directions,
             "visual_template": (
                 visual_template.model_dump() if visual_template is not None else {}
             ),
@@ -249,7 +272,8 @@ class PromptPlanner:
                 "image_prompts": [
                     {
                         "index": "integer",
-                        "role": "string",
+                        "role": "string，必须等于对应 slot_visual_directions.role",
+                        "title": "string，必须等于对应 slot_visual_directions.title",
                         "prompt": "string",
                         "negative_prompt": "string",
                         "visible_text": ["string"],
@@ -286,7 +310,17 @@ class PromptPlanner:
             expected_indices = list(range(1, len(template.slots) + 1))
             actual_indices = [item.index for item in plan.image_prompts]
             if actual_indices == expected_indices:
-                return plan
+                # role 和 title 属于服务器模板元数据，不能信任模型自由发挥。
+                normalized_prompts = [
+                    item.model_copy(
+                        update={
+                            "role": template.slots[position].role,
+                            "title": slot_visual_directions[position]["title"],
+                        }
+                    )
+                    for position, item in enumerate(plan.image_prompts)
+                ]
+                return plan.model_copy(update={"image_prompts": normalized_prompts})
         raise PromptPlanError(
             f"Prompt Planner 连续两次未返回 {len(template.slots)} 个连续槽位"
         )

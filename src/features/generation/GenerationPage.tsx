@@ -103,6 +103,7 @@ function flattenLiveImages(state: LiveGenerationState): GenerationTask["liveImag
           variantIndex: variant.index,
           imageIndex: image.index,
           role: image.role,
+          title: image.title,
           status: image.status,
           imageUrl: image.imageUrl,
           actualSize: image.actualSize,

@@ -5,6 +5,25 @@ import {
 } from "./liveState";
 
 describe("reduceGenerationEvent", () => {
+  it("计划就绪时保存视觉模板为每张图指定的标题", () => {
+    const initial = createInitialLiveState();
+    const next = reduceGenerationEvent(initial, {
+      type: "plan_ready",
+      job_id: "job-1",
+      variant_index: 1,
+      data: {
+        plan: {
+          global_consistency_prompt: "统一蓝白企业信息图风格",
+          image_prompts: [
+            { index: 4, role: "usage_scene", title: "研发与定制", prompt: "研发流程" },
+          ],
+        },
+      },
+    });
+
+    expect(next.variants[1].images[4].title).toBe("研发与定制");
+  });
+
   it("单张完成后立即写入图片 URL、尺寸和结果列表", () => {
     const initial = createInitialLiveState();
     const started = reduceGenerationEvent(initial, {
@@ -62,4 +81,3 @@ describe("reduceGenerationEvent", () => {
     expect(next.failedCount).toBe(1);
   });
 });
-
