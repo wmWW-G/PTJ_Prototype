@@ -26,6 +26,7 @@
 - Azure 非成功响应现在会安全提取 HTTP 状态、Azure 错误码、脱敏错误说明与 request ID，避免前端只显示没有诊断价值的 `HTTP 400`；不会回显 API Key、请求头、Prompt 或图片内容。
 - 增强 Gemini Prompt Planner 的结构化 JSON 容错：支持 Markdown JSON 代码围栏和前后说明文本；商品分析首次结构错误时会携带修复指令自动重试一次。
 - 使用 GitHub Pages 正式页面完成 Azure GPT-Image-2、1K、Low、1:1、单张主图真实 Smoke Test：不再立即返回 HTTP 400，最终成功返回并展示可下载图片。
+- 根据页面评审把模型展示名从 `GPT-Image-2 · Azure` 简化为 `GPT-Image-2`；选择该模型时不再新增“生成质量”控件，原“输出清晰度”直接切换为低、中、高，并分别映射为 `1K + low`、`2K + medium`、`4K + high`。
 
 ## 2026-05-30
 

@@ -19,13 +19,26 @@ export const DEFAULT_MODEL_CAPABILITIES: Record<LiveImageModel, ModelCapability>
     preview_resolutions: ["4K"],
   },
   gpt_image_2_azure: {
-    label: "GPT-Image-2 · Azure",
+    label: "GPT-Image-2",
     aspect_ratios: ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"],
     resolutions: ["1K", "2K", "4K"],
     quality: true,
     qualities: ["low", "medium", "high"],
   },
 };
+
+/**
+ * GPT-Image-2 只向用户展示一个“清晰度”选择器。
+ *
+ * Azure 接口内部仍需要像素档位和质量档位两个参数，因此在前端把
+ * 低/中/高同时映射成配套的 1K/2K/4K 与 low/medium/high。这样界面更简单，
+ * 提交给后端的参数仍然完整且相互一致。
+ */
+const GPT_CLARITY_OPTIONS = [
+  { value: "low", label: "低", resolution: "1K" },
+  { value: "medium", label: "中", resolution: "2K" },
+  { value: "high", label: "高", resolution: "4K" },
+] as const;
 
 /** 模型控件的受控值。 */
 export interface ModelControlValue {
@@ -55,19 +68,50 @@ export function ModelControls({
   capabilities = DEFAULT_MODEL_CAPABILITIES,
 }: ModelControlsProps) {
   const capability = capabilities[value.model] ?? DEFAULT_MODEL_CAPABILITIES[value.model];
+  const isGptImage = value.model === "gpt_image_2_azure";
 
   /** 切换模型并纠正新模型不支持的当前值。 */
   function changeModel(model: LiveImageModel) {
     const next = capabilities[model] ?? DEFAULT_MODEL_CAPABILITIES[model];
+    const gptResolution = GPT_CLARITY_OPTIONS.find(
+      (option) => option.value === value.quality,
+    )?.resolution;
     onChange({
       ...value,
       model,
       aspectRatio: next.aspect_ratios.includes(value.aspectRatio)
         ? value.aspectRatio
         : "1:1",
-      resolution: next.resolutions.includes(value.resolution)
-        ? value.resolution
-        : "2K",
+      resolution:
+        model === "gpt_image_2_azure"
+          ? (gptResolution ?? "2K")
+          : next.resolutions.includes(value.resolution)
+            ? value.resolution
+            : "2K",
+    });
+  }
+
+  /**
+   * 更新唯一的清晰度控件。
+   *
+   * Google 模型直接更新 1K/2K/4K；GPT-Image-2 则把低/中/高同时映射到
+   * 内部的 resolution 与 quality，避免再渲染一个“生成质量”控件。
+   */
+  function changeClarity(nextValue: string) {
+    if (!isGptImage) {
+      onChange({
+        ...value,
+        resolution: nextValue as ModelControlValue["resolution"],
+      });
+      return;
+    }
+
+    const option = GPT_CLARITY_OPTIONS.find((item) => item.value === nextValue);
+    if (!option) return;
+    onChange({
+      ...value,
+      resolution: option.resolution,
+      quality: option.value,
     });
   }
 
@@ -95,42 +139,24 @@ export function ModelControls({
           <span className={styles.selectWrap}>
             <select
               aria-label="输出清晰度"
-              value={value.resolution}
-              onChange={(event) => onChange({
-                ...value,
-                resolution: event.target.value as ModelControlValue["resolution"],
-              })}
+              value={isGptImage ? value.quality : value.resolution}
+              onChange={(event) => changeClarity(event.target.value)}
             >
-              {capability.resolutions.map((resolution) => (
-                <option key={resolution} value={resolution}>
-                  {resolution}{capability.preview_resolutions?.includes(resolution) ? " · Preview" : ""}
-                </option>
-              ))}
+              {isGptImage
+                ? GPT_CLARITY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))
+                : capability.resolutions.map((resolution) => (
+                    <option key={resolution} value={resolution}>
+                      {resolution}{capability.preview_resolutions?.includes(resolution) ? " · Preview" : ""}
+                    </option>
+                  ))}
             </select>
             <ChevronDown size={16} />
           </span>
         </label>
-
-        {capability.quality && (
-          <label className={styles.controlBlock}>
-            <span className={styles.fieldLabel}>生成质量</span>
-            <span className={styles.selectWrap}>
-              <select
-                aria-label="生成质量"
-                value={value.quality}
-                onChange={(event) => onChange({
-                  ...value,
-                  quality: event.target.value as ModelControlValue["quality"],
-                })}
-              >
-                <option value="low">Low · 快速</option>
-                <option value="medium">Medium · 平衡</option>
-                <option value="high">High · 精细</option>
-              </select>
-              <ChevronDown size={16} />
-            </span>
-          </label>
-        )}
       </div>
 
       <div className={styles.ratioBlock}>
@@ -158,4 +184,3 @@ export function ModelControls({
     </section>
   );
 }
-

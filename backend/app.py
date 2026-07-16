@@ -184,7 +184,7 @@ def create_app(
                     "preview_resolutions": ["4K"],
                 },
                 "gpt_image_2_azure": {
-                    "label": "GPT-Image-2 · Azure",
+                    "label": "GPT-Image-2",
                     "aspect_ratios": common_ratios,
                     "resolutions": ["1K", "2K", "4K"],
                     "quality": True,
@@ -287,4 +287,3 @@ def create_app(
 
 
 app = create_app()
-

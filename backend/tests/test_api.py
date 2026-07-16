@@ -91,6 +91,14 @@ def test_capabilities_expose_server_template_counts() -> None:
     assert payload["templates"]["listing_01"]["slot_count"] == 5
 
 
+def test_capabilities_use_customer_facing_gpt_image_name() -> None:
+    """能力接口不应把内部 Azure 供应商信息拼进前端模型名称。"""
+
+    payload = _client().get("/api/capabilities").json()
+
+    assert payload["models"]["gpt_image_2_azure"]["label"] == "GPT-Image-2"
+
+
 def test_stream_is_ndjson() -> None:
     """真实生图使用逐行 JSON，让前端逐张刷新结果。"""
 
