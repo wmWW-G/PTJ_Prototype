@@ -93,7 +93,6 @@ async def test_azure_generate_uses_calculated_size_and_quality() -> None:
         endpoint="https://example.openai.azure.com",
         api_key="test-key",
         deployment="gpt-image-2",
-        edit_api_version="2025-04-01",
         http_client=http_client,
     )
     result = await provider.generate(
@@ -133,7 +132,6 @@ async def test_azure_generate_normalizes_foundry_project_endpoint() -> None:
         endpoint="https://demo-resource.services.ai.azure.com/api/projects/demo-project",
         api_key="test-key",
         deployment="gpt-image-2",
-        edit_api_version="2025-04-01",
         http_client=http_client,
     )
 
@@ -172,7 +170,6 @@ async def test_azure_error_exposes_safe_code_and_message() -> None:
         endpoint="https://example.openai.azure.com",
         api_key="test-key",
         deployment="gpt-image-2",
-        edit_api_version="2025-04-01",
         http_client=http_client,
     )
 
@@ -192,6 +189,51 @@ async def test_azure_error_exposes_safe_code_and_message() -> None:
     assert "invalid_request_error" in message
     assert "endpoint or deployment is invalid" in message
     assert "request-123" in message
+
+
+@pytest.mark.asyncio
+async def test_azure_edit_uses_v1_endpoint_and_model_form_field() -> None:
+    """Azure 编辑必须与已验证的生成调用统一使用 v1 图片接口。
+
+    这条测试专门防止编辑调用退回 deployment 旧式 URL：旧 URL 与错误的
+    ``2025-04-01`` 版本组合会导致第一张生成成功、后续编辑全部返回 404。
+    """
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == (
+            "https://example.openai.azure.com/openai/v1/images/edits?api-version=preview"
+        )
+        assert request.headers["content-type"].startswith("multipart/form-data;")
+        body = request.content
+        assert b'name="model"' in body
+        assert b"gpt-image-2" in body
+        assert b'name="image"; filename="anchor.png"' in body
+        return httpx.Response(
+            200,
+            json={"data": [{"b64_json": base64.b64encode(b"azure-edited").decode()}]},
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AzureImageProvider(
+        endpoint="https://example.openai.azure.com",
+        api_key="test-key",
+        deployment="gpt-image-2",
+        http_client=http_client,
+    )
+
+    result = await provider.edit(
+        "保持商品一致并更换场景",
+        [BinaryAsset(data=b"reference", mime_type="image/png", name="anchor.png")],
+        ImageSpec(
+            model="gpt_image_2_azure",
+            aspect_ratio="1:1",
+            resolution="2K",
+            quality="medium",
+        ),
+    )
+
+    await http_client.aclose()
+    assert result.data == b"azure-edited"
 
 
 def test_provider_router_returns_registered_model() -> None:

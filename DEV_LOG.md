@@ -2,6 +2,8 @@
 
 ## 2026-07-16
 
+- 修复 GPT-Image-2 套图仅第一张成功的问题：Azure 纯生成原本走 v1 接口，后续编辑却错误使用 deployment 路径和无效的 `2025-04-01` 版本，导致所有副图立即返回 HTTP 404；现已统一为 `/openai/v1/images/edits?api-version=preview`，并通过 multipart `model` 与重复 `image` 字段传递部署名和参考图。
+- 新增 Azure v1 图片编辑请求映射回归测试，固定检查 URL、multipart 类型、模型字段和参考图字段，防止再次出现“首图成功、后续全失败”。
 - 将文生图和图生图从工作流原型升级为 React + FastAPI 真实生图原型；AI 修图和模特换装继续使用 Mock。
 - 新增服务器模板：主图 1 张、套图 6 张、详情图 5 张、海报 1 张，实际输出数量由模板槽位决定。
 - 新增 Gemini 3.5 Flash 商品分析与结构化 Prompt Planner，错误槽位数量会自动修复一次。

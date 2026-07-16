@@ -76,7 +76,6 @@ def _build_orchestrator(settings: Settings, storage: BlobStorage) -> GenerationO
         endpoint=settings.azure_openai_endpoint,
         api_key=settings.azure_openai_api_key,
         deployment=settings.azure_gpt_image_2_deployment,
-        edit_api_version=settings.azure_openai_edit_api_version,
     )
     return GenerationOrchestrator(
         planner=planner,

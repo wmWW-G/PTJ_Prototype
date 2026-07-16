@@ -21,7 +21,6 @@ class Settings:
     azure_openai_endpoint: str = ""
     azure_openai_api_key: str = ""
     azure_gpt_image_2_deployment: str = ""
-    azure_openai_edit_api_version: str = "2025-04-01"
     blob_read_write_token: str = ""
     blob_allowed_host: str = ""
     allowed_origins: tuple[str, ...] = (
@@ -62,10 +61,6 @@ class Settings:
             azure_gpt_image_2_deployment=os.getenv(
                 "AZURE_GPT_IMAGE_2_DEPLOYMENT", ""
             ).strip(),
-            azure_openai_edit_api_version=os.getenv(
-                "AZURE_OPENAI_EDIT_API_VERSION", "2025-04-01"
-            ).strip()
-            or "2025-04-01",
             blob_read_write_token=os.getenv("BLOB_READ_WRITE_TOKEN", "").strip(),
             blob_allowed_host=os.getenv("BLOB_ALLOWED_HOST", "").strip().lower(),
             allowed_origins=origins,

@@ -194,7 +194,7 @@ class ImageProvider(Protocol):
     ) -> GeneratedBinary: ...
 ```
 
-Google Adapter 动态传 `aspectRatio`、`imageSize` 和模型 ID；Azure 文生图使用 `/openai/v1/images/generations?api-version=preview`，图生图使用部署级 multipart edit Endpoint。所有返回统一为 `GeneratedBinary`。
+Google Adapter 动态传 `aspectRatio`、`imageSize` 和模型 ID；Azure 文生图和图生图统一使用 `/openai/v1/images/*?api-version=preview`，图生图通过 multipart 的 `model` 与 `image` 字段提交。所有返回统一为 `GeneratedBinary`。
 
 - [ ] **Step 6: 运行测试确认通过**
 
@@ -508,4 +508,3 @@ git status --short
 ```
 
 真实 API 不属于自动验证；只有用户配置 Vercel/本地环境变量并显式执行 `--confirm-live-call` 时才产生模型费用。
-

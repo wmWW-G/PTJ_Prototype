@@ -258,7 +258,6 @@ class AzureImageProvider:
         endpoint: str,
         api_key: str,
         deployment: str,
-        edit_api_version: str,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """保存 Azure 连接配置。
@@ -267,7 +266,6 @@ class AzureImageProvider:
             endpoint: Azure OpenAI 资源 Endpoint。
             api_key: 仅位于服务端环境变量中的访问密钥。
             deployment: GPT-Image-2 部署名称。
-            edit_api_version: 图片编辑接口 API Version。
             http_client: 可选 HTTPX 客户端，用于测试注入。
 
         Returns:
@@ -280,7 +278,6 @@ class AzureImageProvider:
         self._endpoint = _normalize_azure_openai_endpoint(endpoint)
         self._api_key = api_key
         self._deployment = deployment
-        self._edit_api_version = edit_api_version
         self._http_client = http_client or httpx.AsyncClient(timeout=240)
         self._owns_client = http_client is None
 
@@ -339,11 +336,14 @@ class AzureImageProvider:
         if not references:
             raise UnsupportedCapabilityError("Azure 图片编辑至少需要一张参考图")
         size = calculate_azure_size(spec.aspect_ratio, spec.resolution)
+        # v1 编辑接口要求 multipart 字段名为 ``image``；多图通过重复同名字段传递。
+        # 统一使用 v1 路径，可以避免生成与编辑使用不同 API 版本造成 404。
         files = [
-            ("image[]", (reference.name, reference.data, reference.mime_type))
+            ("image", (reference.name, reference.data, reference.mime_type))
             for reference in references
         ]
         data = {
+            "model": self._deployment,
             "prompt": prompt,
             "size": size.api_value,
             "quality": spec.quality or "medium",
@@ -352,10 +352,7 @@ class AzureImageProvider:
         }
         response = await self._request(
             "POST",
-            (
-                f"{self._endpoint}/openai/deployments/{self._deployment}/images/edits"
-                f"?api-version={self._edit_api_version}"
-            ),
+            f"{self._endpoint}/openai/v1/images/edits?api-version=preview",
             data=data,
             files=files,
         )
