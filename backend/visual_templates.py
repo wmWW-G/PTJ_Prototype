@@ -71,10 +71,10 @@ VISUAL_TEMPLATES: dict[str, VisualTemplateDefinition] = {
         information_focus=["工厂规模与历史", "OEM/ODM 能力", "质量控制", "交付与服务", "认证与合作背书"],
         role_highlights=["企业总览", "仓储与交付", "品控流程", "研发与定制", "认证背书", "产能与服务"],
         preview_images=[
-            "demo/generated/supplier-factory.jpg",
-            "demo/generated/supplier-warehouse.jpg",
-            "demo/generated/supplier-design.jpg",
-            "demo/generated/supplier-quality.jpg",
+            "demo/generated/ai-supplier-factory.jpg",
+            "demo/generated/ai-supplier-warehouse.jpg",
+            "demo/generated/ai-supplier-design.jpg",
+            "demo/generated/ai-supplier-quality.jpg",
         ],
         fields=[
             _field("company_name", "公司名称", "例如：Ningbo Example Manufacturing Co., Ltd."),

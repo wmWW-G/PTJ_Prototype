@@ -35,13 +35,47 @@ describe("VisualTemplatePicker", () => {
     expect(screen.getByRole("dialog", { name: "选择生图模板" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "企业实力" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /企业实力套图/ }));
+    await user.click(screen.getByRole("button", { name: "选择企业实力套图" }));
     expect(screen.getByText("工厂规模与历史")).toBeInTheDocument();
     expect(screen.getByText("认证与合作背书")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "使用此模板" }));
 
     expect(screen.queryByRole("dialog", { name: "选择生图模板" })).not.toBeInTheDocument();
     expect(screen.getByText("企业实力套图")).toBeInTheDocument();
+  });
+
+  it("每张模板卡都提供独立详情入口，并可从详情直接使用模板", async () => {
+    const user = userEvent.setup();
+    render(<ControlledPicker />);
+
+    await user.click(screen.getByRole("button", { name: "更换模板" }));
+    expect(screen.getByRole("button", { name: "查看标准商品套图详情" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看企业实力套图详情" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看极简质感套图详情" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看场景故事套图详情" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "查看企业实力套图详情" }));
+    expect(screen.getByRole("heading", { name: "企业实力套图详情" })).toBeInTheDocument();
+    expect(screen.getByText("这套会生成什么")).toBeInTheDocument();
+    expect(screen.getByText("企业总览")).toBeInTheDocument();
+    expect(screen.getByText("可补充信息（均选填）")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "选择并使用此模板" }));
+    expect(screen.queryByRole("dialog", { name: "选择生图模板" })).not.toBeInTheDocument();
+    expect(screen.getByText("企业实力套图")).toBeInTheDocument();
+  });
+
+  it("模板详情可以返回模板列表，不会提前改变当前选择", async () => {
+    const user = userEvent.setup();
+    render(<ControlledPicker />);
+
+    await user.click(screen.getByRole("button", { name: "更换模板" }));
+    await user.click(screen.getByRole("button", { name: "查看极简质感套图详情" }));
+    await user.click(screen.getByRole("button", { name: "返回模板列表" }));
+
+    expect(screen.getByText("选择生图模板")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "关闭" }));
+    expect(screen.getByText("标准商品套图")).toBeInTheDocument();
   });
 
   it("补充字段全部选填，并把用户填写内容交回页面状态", async () => {

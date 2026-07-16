@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ImageIcon, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Eye, ImageIcon, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { assetPath } from "../../../lib/assetPath";
@@ -38,10 +38,10 @@ export const DEFAULT_VISUAL_TEMPLATES: Record<string, VisualTemplateCapability> 
     information_focus: ["工厂规模与历史", "OEM/ODM 能力", "质量控制", "交付与服务", "认证与合作背书"],
     role_highlights: ["企业总览", "仓储与交付", "品控流程", "研发与定制", "认证背书", "产能与服务"],
     preview_images: [
-      "demo/generated/supplier-factory.jpg",
-      "demo/generated/supplier-warehouse.jpg",
-      "demo/generated/supplier-design.jpg",
-      "demo/generated/supplier-quality.jpg",
+      "demo/generated/ai-supplier-factory.jpg",
+      "demo/generated/ai-supplier-warehouse.jpg",
+      "demo/generated/ai-supplier-design.jpg",
+      "demo/generated/ai-supplier-quality.jpg",
     ],
     fields: [
       { key: "company_name", label: "公司名称", placeholder: "例如：Ningbo Example Manufacturing Co., Ltd.", required: false },
@@ -130,23 +130,39 @@ export function VisualTemplatePicker({
   const [isOpen, setIsOpen] = useState(false);
   const [draftValue, setDraftValue] = useState(selected.id);
   const [category, setCategory] = useState("推荐");
+  const [detailTemplateId, setDetailTemplateId] = useState<string | null>(null);
   const categories = ["推荐", ...new Set(templateList.map((item) => item.category))];
   const visibleTemplates = category === "推荐"
     ? templateList
     : templateList.filter((item) => item.category === category);
   const filledCount = selected.fields.filter((field) => supplementalInfo[field.key]?.trim()).length;
+  const detailTemplate = detailTemplateId ? templates[detailTemplateId] : null;
 
   /** 打开抽屉时以当前模板为草稿，取消操作不会污染正式选择。 */
   function openDrawer() {
     setDraftValue(selected.id);
     setCategory("推荐");
+    setDetailTemplateId(null);
     setIsOpen(true);
+  }
+
+  /** 关闭抽屉并清除详情层，确保下次打开仍从模板列表开始。 */
+  function closeDrawer() {
+    setDetailTemplateId(null);
+    setIsOpen(false);
   }
 
   /** 确认草稿模板，同时保留名称相同的已填信息，减少重复输入。 */
   function confirmTemplate() {
     onChange(draftValue);
-    setIsOpen(false);
+    closeDrawer();
+  }
+
+  /** 从详情页直接确认当前模板，省去返回列表后再次确认的步骤。 */
+  function confirmDetailTemplate() {
+    if (!detailTemplate) return;
+    onChange(detailTemplate.id);
+    closeDrawer();
   }
 
   /**
@@ -206,64 +222,141 @@ export function VisualTemplatePicker({
 
       {isOpen && createPortal((
         <div className={styles.drawerLayer}>
-          <button className={styles.backdrop} type="button" aria-label="关闭模板选择" onClick={() => setIsOpen(false)} />
-          <aside className={styles.drawer} role="dialog" aria-modal="true" aria-label="选择生图模板">
+          <button className={styles.backdrop} type="button" aria-label="关闭模板选择" onClick={closeDrawer} />
+          <aside
+            className={`${styles.drawer} ${detailTemplate ? styles.detailDrawer : ""}`}
+            role="dialog"
+            aria-modal="true"
+            aria-label="选择生图模板"
+          >
             <header>
-              <div>
-                <strong>选择生图模板</strong>
-                <span>先看整套会怎么组织，再决定需要补充什么信息。</span>
-              </div>
-              <button type="button" aria-label="关闭" onClick={() => setIsOpen(false)}><X size={19} /></button>
+              {detailTemplate ? (
+                <div className={styles.detailHeader}>
+                  <button type="button" aria-label="返回模板列表" onClick={() => setDetailTemplateId(null)}>
+                    <ArrowLeft size={18} />
+                  </button>
+                  <div>
+                    <h2>{detailTemplate.name}详情</h2>
+                    <span>查看这套模板的完整画面结构和可补充信息。</span>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <strong>选择生图模板</strong>
+                  <span>先看整套会怎么组织，再决定需要补充什么信息。</span>
+                </div>
+              )}
+              <button type="button" aria-label="关闭" onClick={closeDrawer}><X size={19} /></button>
             </header>
 
-            <div className={styles.categoryTabs} aria-label="模板分类">
-              {categories.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  className={category === item ? styles.activeCategory : ""}
-                  onClick={() => setCategory(item)}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
+            {detailTemplate ? (
+              <>
+                <div className={styles.detailView}>
+                  <div className={styles.detailPreview} aria-label={`${detailTemplate.name}预览图`}>
+                    {detailTemplate.preview_images.slice(0, 4).map((image, index) => (
+                      <img key={image} src={assetPath(image)} alt={`${detailTemplate.name}示例 ${index + 1}`} />
+                    ))}
+                  </div>
 
-            <div className={styles.templateGrid}>
-              {visibleTemplates.map((item) => {
-                const active = draftValue === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={active ? styles.activeCard : ""}
-                    aria-pressed={active}
-                    onClick={() => setDraftValue(item.id)}
-                  >
-                    <div className={styles.cardPreview}>
-                      {item.preview_images.slice(0, 4).map((image) => (
-                        <img key={image} src={assetPath(image)} alt="" />
+                  <div className={styles.detailIntro}>
+                    <span>{detailTemplate.category}</span>
+                    <p>{detailTemplate.description}</p>
+                    <small>{detailTemplate.art_direction}</small>
+                  </div>
+
+                  <section className={styles.detailSection}>
+                    <h3>这套会生成什么</h3>
+                    <ol className={styles.detailRoles}>
+                      {detailTemplate.role_highlights.map((role, index) => (
+                        <li key={role}><b>{String(index + 1).padStart(2, "0")}</b><span>{role}</span></li>
                       ))}
-                      {active && <i><Check size={14} /></i>}
-                    </div>
-                    <strong>{item.name}</strong>
-                    <span>{item.description}</span>
-                    {active && (
-                      <ul>
-                        {item.information_focus.map((focus) => <li key={focus}>{focus}</li>)}
-                      </ul>
-                    )}
-                  </button>
-                );
-              })}
-              {visibleTemplates.length === 0 && (
-                <div className={styles.emptyCategory}><ImageIcon size={22} /><span>该分类暂无模板</span></div>
-              )}
-            </div>
+                    </ol>
+                  </section>
 
-            <footer>
-              <button type="button" onClick={confirmTemplate}>使用此模板</button>
-            </footer>
+                  <section className={styles.detailSection}>
+                    <h3>重点表达信息</h3>
+                    <div className={styles.detailFocus}>
+                      {detailTemplate.information_focus.map((focus) => <span key={focus}>{focus}</span>)}
+                    </div>
+                  </section>
+
+                  <section className={styles.detailSection}>
+                    <h3>可补充信息（均选填）</h3>
+                    <p>不填写也能生成；填写得越具体，整套内容会越贴近你的真实业务。</p>
+                    <div className={styles.detailFields}>
+                      {detailTemplate.fields.map((field) => (
+                        <div key={field.key}><strong>{field.label}</strong><span>{field.placeholder}</span></div>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+
+                <footer>
+                  <button type="button" onClick={confirmDetailTemplate}>选择并使用此模板</button>
+                </footer>
+              </>
+            ) : (
+              <>
+                <div className={styles.categoryTabs} aria-label="模板分类">
+                  {categories.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      className={category === item ? styles.activeCategory : ""}
+                      onClick={() => setCategory(item)}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+
+                <div className={styles.templateGrid}>
+                  {visibleTemplates.map((item) => {
+                    const active = draftValue === item.id;
+                    return (
+                      <article key={item.id} className={`${styles.templateCard} ${active ? styles.activeCard : ""}`}>
+                        <button
+                          type="button"
+                          className={styles.cardSelect}
+                          aria-label={`选择${item.name}`}
+                          aria-pressed={active}
+                          onClick={() => setDraftValue(item.id)}
+                        >
+                          <div className={styles.cardPreview}>
+                            {item.preview_images.slice(0, 4).map((image) => (
+                              <img key={image} src={assetPath(image)} alt="" />
+                            ))}
+                            {active && <i><Check size={14} /></i>}
+                          </div>
+                          <strong>{item.name}</strong>
+                          <span>{item.description}</span>
+                          {active && (
+                            <ul>
+                              {item.information_focus.map((focus) => <li key={focus}>{focus}</li>)}
+                            </ul>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.detailButton}
+                          aria-label={`查看${item.name}详情`}
+                          onClick={() => setDetailTemplateId(item.id)}
+                        >
+                          <Eye size={14} />查看详情
+                        </button>
+                      </article>
+                    );
+                  })}
+                  {visibleTemplates.length === 0 && (
+                    <div className={styles.emptyCategory}><ImageIcon size={22} /><span>该分类暂无模板</span></div>
+                  )}
+                </div>
+
+                <footer>
+                  <button type="button" onClick={confirmTemplate}>使用此模板</button>
+                </footer>
+              </>
+            )}
           </aside>
         </div>
       ), document.body)}

@@ -38,7 +38,7 @@
 - `src/features/generation/liveState.ts`：流事件纯函数归并。
 - `src/features/generation/components/ModelControls.tsx`：动态模型参数。
 - `src/features/generation/components/LiveResultsPanel.tsx`：逐张结果控制台。
-- `src/features/generation/components/VisualTemplatePicker.tsx`：模板摘要、右侧选择抽屉和动态选填信息。
+- `src/features/generation/components/VisualTemplatePicker.tsx`：模板摘要、右侧选择抽屉、每套模板的二级详情和动态选填信息。
 - `src/features/tasks/`：LocalStorage 历史和旧数据兼容。
 
 早期 Coze 档案仍位于 `WORKFLOWS.md` 和 `coze_nodes/`，它们不是当前真实生图运行依赖。
@@ -71,6 +71,8 @@ job_started → planning → plan_ready → variant_started
 不要把密钥写入前端、`VITE_*`、源码或日志；不要让后端下载任意用户 URL；不要把图 2 继续传给图 3，所有副图只共享原图或同版图 1。
 
 `visual_template_id` 只决定视觉方向和信息组织，`template_id` 仍然是张数与槽位职责的唯一来源。`supplemental_info` 全部选填；空字段代表未知，Planner 不得补写认证、产能、客户等事实。
+
+企业实力模板的预览素材位于 `public/demo/generated/ai-supplier-*.jpg`，均为项目内通过 ImageGen 生成的原创演示图。不要重新使用用户提供的其他店铺截图或从截图裁切素材。
 
 ## 本地运行与验证
 
