@@ -1,0 +1,9 @@
+fastapi>=0.117.1,<1
+google-auth>=2.40,<3
+httpx>=0.28,<1
+pydantic>=2.11,<3
+python-multipart>=0.0.20,<1
+pytest>=8.4,<9
+pytest-asyncio>=1.1,<2
+uvicorn>=0.35,<1
+vercel>=0.5,<1
