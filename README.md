@@ -49,7 +49,10 @@ python3.12 -m venv .venv
 4. 部署后先打开 `/api/health`，确认 `configured: true`。
 5. 打开 `/api/capabilities`，确认三个模型与四个模板可见。
 
-`api/index.py` 是 Vercel FastAPI 的自动识别入口，不需要再为 `/api/*` 添加 rewrite。
+由于仓库同时包含 Vite 与 FastAPI，`api/health.py`、`api/capabilities.py`、
+`api/uploads.py` 和 `api/generations/stream.py` 分别提供精确的 Vercel
+Python Function 路由，并共同复用 `backend.app:app`。不要合并成只能匹配
+`/api` 的单个 `api/index.py`，也不需要添加 rewrite。
 
 密钥只能放在 Vercel 环境变量，不能放进 `VITE_*`、源码、Git、日志或截图。
 

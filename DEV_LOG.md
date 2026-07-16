@@ -15,7 +15,9 @@
 - 新增显式真实模型 Smoke Test；默认自动测试不调用模型、不产生费用。
 - 当前自动验证覆盖后端模板、尺寸、Planner、Provider、并发、重试、存储、API，以及前端 NDJSON、实时状态、模型控件和页面回归。
 - 浏览器验收发现 `127.0.0.1:5173` 未包含在默认 CORS；补充双本地域名并新增回归测试，复验返回 `CORS_OK`。
-- 按 Vercel 2026 FastAPI 零配置规则移除多余 `/api/*` rewrite，保留 `api/index.py` catch-all 和 300 秒函数配置，并新增部署配置测试。
+- 按 Vercel 2026 FastAPI 零配置规则移除多余 `/api/*` rewrite；首次误把 `api/index.py` 当作 catch-all，线上复测发现其只匹配 `/api`，导致 capabilities 和 generation 的 OPTIONS/POST 均返回 404。
+- 尝试改为根目录 `app.py` 后，Vercel 虽成功构建 Vite，但没有把根 ASGI 应用加入混合项目路由表，生产 `/api/capabilities` 仍为 404。
+- 最终为 health、capabilities、uploads、generations/stream 建立精确的 `api/**/*.py` 薄入口，全部复用 `backend.app:app`，并恢复 300 秒 Python Function 配置；不复制任何业务逻辑。
 - 创建并部署 Vercel 项目 `ptj-image-api`，稳定 API 地址为 `https://ptj-image-api.vercel.app`。
 - 为 Vercel 生产环境配置 GitHub Pages CORS，并在 GitHub Actions 中设置 `VITE_API_BASE_URL`，修复公网前端回退 `localhost:8000` 导致的 `Failed to fetch`。
 - 当前 Vercel 项目尚未添加 Google、Azure 和 Blob 密钥；网络连通后会返回明确的服务端配置缺失提示，直到密钥补齐。

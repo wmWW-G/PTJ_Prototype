@@ -23,7 +23,7 @@
 
 ## 关键模块
 
-- `api/index.py`：Vercel Python Function 入口。
+- `api/health.py`、`api/capabilities.py`、`api/uploads.py`、`api/generations/stream.py`：Vite + FastAPI 混合部署的精确 Vercel 函数入口，全部复用同一个 `backend.app:app`。
 - `backend/app.py`：FastAPI、CORS、路由和真实依赖组装。
 - `backend/domain.py`：统一请求、模板、Prompt、图片和流事件类型。
 - `backend/templates.py`：四种服务器模板，是单版张数的唯一事实来源。
