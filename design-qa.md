@@ -1,5 +1,25 @@
 # Design QA
 
+## 2026-07-16 真实生图后端原型验收
+
+- implementation screenshot: `/Users/garden/.codex/visualizations/2026/07/16/019f686c-fda5-7bf1-bbef-ccd5548bd10b/ptj-real-backend-prototype.png`
+- route: `http://127.0.0.1:5173/PTJ_Prototype/`
+- page: 批量文生图 / 套图 / Nano Banana 2 / 2K / 1:1
+- result: passed
+
+本次浏览器验收确认：
+
+- 页面正常加载，正文非空，无 Vite 错误覆盖层。
+- 三个真实模型均出现在模型选择中。
+- Google 模型显示 1K/2K/4K，4K 标记 Preview。
+- 切换 Azure GPT-Image-2 后动态出现 Low/Medium/High 独立质量选择。
+- 套图明确显示“每版 6 张”和“1 版 × 6 张 = 6 张”。
+- 左侧真实参数区与原橙色品牌风格一致，右侧历史结果工作台未被破坏。
+- 浏览器首次检查发现 `127.0.0.1` CORS 缺项；修复后从页面上下文请求 `/api/capabilities` 返回 `CORS_OK`。
+- 后端 `/api/health` 和 `/api/capabilities` 均返回 200；缺少真实密钥时 health 只列变量名，不回显值。
+
+当前未执行收费真实模型 Smoke Test，因为本地没有注入 Vercel 密钥；代码不会静默回退 Mock。
+
 - source visual truth: `/var/folders/94/2dlbsm3968j4rqjll_d32qb40000gn/T/codex-clipboard-e87cfb8c-2213-466e-9457-e7473b0e6f0c.png`
 - implementation screenshot: `/Users/garden/.codex/visualizations/2026/07/15/019f63a5-d31a-7df2-b66c-fce7d960d7c6/ptj-redesign-text-qa-1308x1024.png`
 - intended viewport: 1440 × 1024 desktop

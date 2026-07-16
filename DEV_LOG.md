@@ -1,5 +1,22 @@
 # 开发日志
 
+## 2026-07-16
+
+- 将文生图和图生图从工作流原型升级为 React + FastAPI 真实生图原型；AI 修图和模特换装继续使用 Mock。
+- 新增服务器模板：主图 1 张、套图 6 张、详情图 5 张、海报 1 张，实际输出数量由模板槽位决定。
+- 新增 Gemini 3.5 Flash 商品分析与结构化 Prompt Planner，错误槽位数量会自动修复一次。
+- 新增 Nano Banana 2、Nano Banana Pro 和 Azure GPT-Image-2 统一 Adapter，比例、分辨率和 Azure 质量均为动态参数。
+- 新增 Azure 任意合法尺寸换算，自动满足 16 倍数、长边、总像素和 3:1 比例限制。
+- 新增有图全并发、无图先图 1 后并发的生成编排，以及每模型并发、RPM、408/429/5xx 重试和部分成功状态。
+- 新增 Vercel Blob 参考图上传、结果保存、4 MB 限制、MIME 校验、受控主机/路径下载和 SSRF 防护。
+- 新增 FastAPI health、capabilities、uploads 和 NDJSON streaming 路由；密钥只读取 Vercel 环境变量。
+- 前端新增三模型参数控件、完整方案数量、逐张实时结果、实际尺寸、耗时、重试和错误展示。
+- 扩展 LocalStorage 任务结构并兼容旧 v2 历史数据；未完成任务在关闭浏览器后不恢复服务端执行。
+- 新增显式真实模型 Smoke Test；默认自动测试不调用模型、不产生费用。
+- 当前自动验证覆盖后端模板、尺寸、Planner、Provider、并发、重试、存储、API，以及前端 NDJSON、实时状态、模型控件和页面回归。
+- 浏览器验收发现 `127.0.0.1:5173` 未包含在默认 CORS；补充双本地域名并新增回归测试，复验返回 `CORS_OK`。
+- 按 Vercel 2026 FastAPI 零配置规则移除多余 `/api/*` rewrite，保留 `api/index.py` catch-all 和 300 秒函数配置，并新增部署配置测试。
+
 ## 2026-05-30
 
 - 新增 `coze_nodes/` 目录，用于保存用户提供的 Coze（扣子）节点素材。

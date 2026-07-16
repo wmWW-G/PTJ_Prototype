@@ -36,3 +36,12 @@ def test_default_models_and_location_are_stable(monkeypatch) -> None:
     assert settings.google_cloud_location == "global"
     assert settings.google_prompt_planner_model == "gemini-3.5-flash"
 
+
+def test_default_cors_allows_both_localhost_spellings(monkeypatch) -> None:
+    """本地浏览器使用 localhost 或 127.0.0.1 都应能读取 API。"""
+
+    monkeypatch.delenv("ALLOWED_ORIGINS", raising=False)
+    settings = Settings.from_env()
+
+    assert "http://localhost:5173" in settings.allowed_origins
+    assert "http://127.0.0.1:5173" in settings.allowed_origins

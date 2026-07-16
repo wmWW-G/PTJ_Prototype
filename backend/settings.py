@@ -24,7 +24,10 @@ class Settings:
     azure_openai_edit_api_version: str = "2025-04-01"
     blob_read_write_token: str = ""
     blob_allowed_host: str = ""
-    allowed_origins: tuple[str, ...] = ("http://localhost:5173",)
+    allowed_origins: tuple[str, ...] = (
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    )
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -40,9 +43,10 @@ class Settings:
             不主动抛出异常；缺失配置由 ``missing_configuration`` 报告。
         """
 
+        default_origins = "http://localhost:5173,http://127.0.0.1:5173"
         origins = tuple(
             origin.strip()
-            for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+            for origin in os.getenv("ALLOWED_ORIGINS", default_origins).split(",")
             if origin.strip()
         )
         return cls(
@@ -111,4 +115,3 @@ class Settings:
             "planner_model": self.google_prompt_planner_model,
             "google_location": self.google_cloud_location,
         }
-
