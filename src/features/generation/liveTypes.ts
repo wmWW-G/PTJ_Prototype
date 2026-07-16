@@ -31,6 +31,7 @@ export interface LiveGenerationRequest {
   mode: "text-to-image" | "image-to-image";
   image_type: "main" | "set" | "listing" | "poster";
   template_id: string;
+  visual_template_id: string;
   model: LiveImageModel;
   aspect_ratio: string;
   resolution: "1K" | "2K" | "4K";
@@ -38,6 +39,7 @@ export interface LiveGenerationRequest {
   language?: string;
   variant_count: number;
   user_requirement: string;
+  supplemental_info: Record<string, string>;
   reference_assets: ReferenceAssetPayload[];
 }
 
@@ -78,10 +80,32 @@ export interface TemplateCapability {
   }>;
 }
 
+/** 视觉模板中一条用户可选补充信息。 */
+export interface VisualTemplateFieldCapability {
+  key: string;
+  label: string;
+  placeholder: string;
+  required: boolean;
+}
+
+/** 控制整套预期风格、信息密度和动态字段的视觉模板。 */
+export interface VisualTemplateCapability {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  art_direction: string;
+  information_focus: string[];
+  role_highlights: string[];
+  preview_images: string[];
+  fields: VisualTemplateFieldCapability[];
+}
+
 /** 前端动态表单需要的完整服务能力。 */
 export interface GenerationCapabilities {
   models: Record<LiveImageModel, ModelCapability>;
   templates: Record<string, TemplateCapability>;
+  visual_templates: Record<string, VisualTemplateCapability>;
   uploads: {
     max_file_bytes: number;
     max_files: number;
@@ -127,4 +151,3 @@ export interface LiveGenerationState {
   completedCount: number;
   failedCount: number;
 }
-

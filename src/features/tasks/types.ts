@@ -22,6 +22,10 @@ export interface GenerationTask {
   aspectRatio: string;
   /** 服务器模板 ID，决定一版图片的固定槽位。 */
   templateId: string;
+  /** 视觉模板 ID，决定整套风格、信息密度和可选补充字段。 */
+  visualTemplateId?: string;
+  /** 用户针对视觉模板填写的可验证信息；所有字段均可留空。 */
+  supplementalInfo?: Record<string, string>;
   /** 统一分辨率档位，由后端 Adapter 转换为供应商参数。 */
   resolution: "1K" | "2K" | "4K";
   /** Azure 独立质量参数；Google 模型会忽略。 */

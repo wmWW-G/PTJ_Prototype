@@ -99,6 +99,19 @@ def test_capabilities_use_customer_facing_gpt_image_name() -> None:
     assert payload["models"]["gpt_image_2_azure"]["label"] == "GPT-Image-2"
 
 
+def test_capabilities_expose_optional_visual_templates() -> None:
+    """前端模板抽屉必须由服务端拿到视觉模板和可选信息字段。"""
+
+    payload = _client().get("/api/capabilities").json()
+    supplier = payload["visual_templates"]["supplier_strength"]
+
+    assert supplier["name"] == "企业实力套图"
+    assert supplier["category"] == "企业实力"
+    assert supplier["preview_images"]
+    assert "company_name" in [field["key"] for field in supplier["fields"]]
+    assert all(field["required"] is False for field in supplier["fields"])
+
+
 def test_stream_is_ndjson() -> None:
     """真实生图使用逐行 JSON，让前端逐张刷新结果。"""
 

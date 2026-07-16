@@ -18,6 +18,10 @@ import {
   type ModelControlValue,
 } from "./components/ModelControls";
 import { UploadZone } from "./components/UploadZone";
+import {
+  DEFAULT_VISUAL_TEMPLATES,
+  VisualTemplatePicker,
+} from "./components/VisualTemplatePicker";
 import { createInitialLiveState, reduceGenerationEvent } from "./liveState";
 import type {
   GenerationCapabilities,
@@ -152,6 +156,12 @@ export function GenerationPage({ mode }: GenerationPageProps) {
   const [liveState, setLiveState] = useState<LiveGenerationState>(createInitialLiveState);
   const [liveError, setLiveError] = useState("");
   const [capabilities, setCapabilities] = useState<GenerationCapabilities | null>(null);
+  const [visualTemplateId, setVisualTemplateId] = useState(
+    editingTask?.visualTemplateId ?? "standard_product",
+  );
+  const [supplementalInfo, setSupplementalInfo] = useState<Record<string, string>>(
+    editingTask?.supplementalInfo ?? {},
+  );
   const [tasks, setTasks] = useState<GenerationTask[]>(() =>
     listTasks().filter((task) => task.mode === mode),
   );
@@ -210,6 +220,8 @@ export function GenerationPage({ mode }: GenerationPageProps) {
     setSourceImages(task.sourceImages);
     setGarmentImages(task.garmentImages);
     setModelImages(task.modelImages);
+    setVisualTemplateId(task.visualTemplateId ?? "standard_product");
+    setSupplementalInfo(task.supplementalInfo ?? {});
   }
 
   /** 复用历史参数创建 Mock 任务；真实任务则只回填参数等待用户确认。 */
@@ -289,6 +301,8 @@ export function GenerationPage({ mode }: GenerationPageProps) {
       model: modelValue.model,
       aspectRatio: modelValue.aspectRatio,
       templateId,
+      visualTemplateId,
+      supplementalInfo,
       resolution: modelValue.resolution,
       quality: modelValue.quality,
       quantity,
@@ -317,6 +331,7 @@ export function GenerationPage({ mode }: GenerationPageProps) {
           mode: liveMode,
           image_type: imageType,
           template_id: templateId,
+          visual_template_id: visualTemplateId,
           model: modelValue.model,
           aspect_ratio: modelValue.aspectRatio,
           resolution: modelValue.resolution,
@@ -327,6 +342,7 @@ export function GenerationPage({ mode }: GenerationPageProps) {
           language: "zh-CN",
           variant_count: quantity,
           user_requirement: requirement,
+          supplemental_info: supplementalInfo,
           reference_assets: referenceAssets,
         },
         (event) => {
@@ -422,6 +438,16 @@ export function GenerationPage({ mode }: GenerationPageProps) {
                 })}
               </div>
             </div>
+          )}
+
+          {isLiveMode && (
+            <VisualTemplatePicker
+              value={visualTemplateId}
+              supplementalInfo={supplementalInfo}
+              templates={capabilities?.visual_templates ?? DEFAULT_VISUAL_TEMPLATES}
+              onChange={setVisualTemplateId}
+              onInfoChange={setSupplementalInfo}
+            />
           )}
 
           {config.uploadLabels.map((label, index) => (

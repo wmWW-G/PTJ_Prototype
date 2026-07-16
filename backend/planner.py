@@ -14,6 +14,7 @@ from .domain import (
     PromptPlan,
     PromptPlanError,
     TemplateDefinition,
+    VisualTemplateDefinition,
 )
 
 
@@ -110,6 +111,8 @@ class PromptPlanner:
         user_requirement: str,
         references: Sequence[BinaryAsset] = (),
         language: str = "zh-CN",
+        visual_template: VisualTemplateDefinition | None = None,
+        supplemental_info: dict[str, str] | None = None,
     ) -> ProductContext:
         """把用户描述和可选参考图分析成统一商品上下文。
 
@@ -117,6 +120,8 @@ class PromptPlanner:
             user_requirement: 用户提供的商品、卖点和视觉要求。
             references: 可选的原始参考图片二进制。
             language: 输出语言，例如 ``zh-CN``。
+            visual_template: 用户选择的整套视觉风格，可选。
+            supplemental_info: 用户明确填写的产品或企业事实，可选。
 
         Returns:
             通过 Pydantic 校验的 ``ProductContext``。
@@ -126,13 +131,24 @@ class PromptPlanner:
             ProviderError: Google 请求失败时由底层透传。
         """
 
+        verified_info = {
+            key: value.strip()
+            for key, value in (supplemental_info or {}).items()
+            if value.strip()
+        }
+        template_context = (
+            visual_template.model_dump() if visual_template is not None else {}
+        )
         parts: list[dict[str, Any]] = [
             {
                 "text": (
                     "你是电商商品视觉分析师。只依据用户输入和图片提取事实，不得编造参数、"
                     "认证、销量、工厂能力或客户案例。输出严格 JSON，字段为 product_name、"
                     "product_description、selling_points、visual_style、must_keep、prohibited_claims。"
-                    f"输出语言：{language}。用户要求：{user_requirement}"
+                    f"输出语言：{language}。用户要求：{user_requirement}。"
+                    f"视觉模板：{json.dumps(template_context, ensure_ascii=False)}。"
+                    f"用户已确认的补充事实：{json.dumps(verified_info, ensure_ascii=False)}。"
+                    "空字段代表未知，不能补写或推断。"
                 )
             }
         ]
@@ -181,6 +197,8 @@ class PromptPlanner:
         language: str,
         target_model: ImageModel,
         variant_index: int,
+        visual_template: VisualTemplateDefinition | None = None,
+        supplemental_info: dict[str, str] | None = None,
     ) -> PromptPlan:
         """为一版图片生成严格匹配模板槽位的 Prompt 数组。
 
@@ -191,6 +209,8 @@ class PromptPlanner:
             language: 可见文案和说明语言。
             target_model: 最终图片模型，用于调整提示词表达方式。
             variant_index: 当前方案序号，用于让多方案保持差异。
+            visual_template: 控制整套视觉风格和信息组织方式的模板。
+            supplemental_info: 仅包含用户输入的可验证补充事实。
 
         Returns:
             索引和数量均匹配模板的 ``PromptPlan``。
@@ -200,6 +220,11 @@ class PromptPlanner:
             ProviderError: Google 请求失败时由底层透传。
         """
 
+        verified_info = {
+            key: value.strip()
+            for key, value in (supplemental_info or {}).items()
+            if value.strip()
+        }
         base_instruction = {
             "task": "生成可直接交给图片模型的电商生图计划",
             "rules": [
@@ -215,6 +240,10 @@ class PromptPlanner:
             "user_requirement": user_requirement,
             "product_context": context.model_dump(),
             "template": template.model_dump(),
+            "visual_template": (
+                visual_template.model_dump() if visual_template is not None else {}
+            ),
+            "verified_supplemental_info": verified_info,
             "output_schema": {
                 "global_consistency_prompt": "string",
                 "image_prompts": [

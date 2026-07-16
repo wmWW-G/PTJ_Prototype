@@ -57,4 +57,19 @@ describe("GenerationPage", () => {
     expect(screen.getByLabelText("生图模型")).toHaveTextContent("GPT-Image-2");
     expect(screen.getByLabelText("输出清晰度")).toHaveValue("2K");
   });
+
+  it.each<GenerationMode>(["text-to-image", "image-to-image"])(
+    "为 %s 提供可预期的生图模板入口",
+    (mode) => {
+      render(
+        <MemoryRouter>
+          <GenerationPage mode={mode} />
+        </MemoryRouter>,
+      );
+
+      expect(screen.getByText("生图模板")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "更换模板" })).toBeInTheDocument();
+      expect(screen.getByText(/不填写也可以生成/)).toBeInTheDocument();
+    },
+  );
 });

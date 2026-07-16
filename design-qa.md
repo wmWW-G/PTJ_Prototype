@@ -83,3 +83,41 @@
 - 可在下一轮补充 760px 以下移动端的专门视觉稿；当前已具备基础响应式布局，但本次目标仅为桌面端。
 
 final result: passed
+
+---
+
+## 2026-07-16 生图模板与选填信息验收
+
+- source visual truth: `/Users/garden/.codex/generated_images/019f686c-fda5-7bf1-bbef-ccd5548bd10b/exec-36ec3de4-58b8-4e9f-acd8-25718b8bce42.png`
+- implementation screenshot: `/Users/garden/.codex/visualizations/2026/07/16/019f686c-fda5-7bf1-bbef-ccd5548bd10b/product-design-audit/09-template-drawer-source-assets.png`
+- combined comparison: `/Users/garden/.codex/visualizations/2026/07/16/019f686c-fda5-7bf1-bbef-ccd5548bd10b/product-design-audit/10-source-vs-final-assets.png`
+- route: `http://127.0.0.1:5173/PTJ_Prototype/#/image-to-image`
+- state: 批量图生图 / 套图 / 企业实力模板抽屉
+
+### Required fidelity surfaces
+
+- 字体与排版：沿用现有橙色品牌系统；抽屉标题、分类、模板名、说明和信息重点层级与选中稿一致。
+- 间距与布局：模板摘要保持紧凑；抽屉固定于视口右侧，遮罩、滚动区和底部确认按钮在 1280 × 720 内容区完整可见。
+- 图片保真：企业实力卡改用工厂外观、仓储、研发和品控的真实栅格预览，不再用商品杯子素材冒充企业信息。
+- 文案与交互：支持推荐、商品展示、企业实力、极简质感分类；选择企业实力后显示工厂历史、OEM/ODM、质量控制、交付服务和认证背书。
+- 状态连续性：模板先作为抽屉草稿，点击“使用此模板”才提交；已填写信息计数实测从 0/8 更新为 2/8。
+
+### Findings and fixes
+
+1. [P1 已修复] 初版企业实力卡仍显示马克杯，无法表达模板预期；已替换为四张企业实力拼贴预览。
+2. [P1 已修复] 抽屉最初被父级入场动画建立的 containing block 限制，底部按钮落在首屏外；改用 React Portal 挂载到 `document.body` 后固定铺满视口。
+3. [P2 已修复] 初版选中卡只展示图片槽位名，信息丰富度不足；改为展示当前模板的信息重点。
+4. 无遗留 P0 / P1 / P2 问题。
+
+### Interaction verification
+
+- “更换模板”打开右侧抽屉：通过。
+- 分类切换、模板卡选择、确认模板：通过。
+- 企业实力动态字段展开、公司名称和认证信息录入：通过。
+- 选填信息计数显示 `已填写 2/8`：通过。
+- 后端 Capabilities 返回 4 套模板及选填字段：通过。
+- Prompt Planner 收到视觉模板和已验证非空事实：通过。
+- 后端 57 项、前端 30 项自动测试：通过。
+- TypeScript 检查与生产构建：通过。
+
+final result: passed

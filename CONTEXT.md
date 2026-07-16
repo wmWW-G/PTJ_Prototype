@@ -10,7 +10,7 @@
 
 1. 图生图先逐张调用 `POST /api/uploads`，参考图保存到 Vercel Blob。
 2. 前端调用 `POST /api/generations/stream`。
-3. FastAPI 读取服务器模板，调用 Gemini Prompt Planner 生成结构化计划。
+3. FastAPI 同时读取“张数/职责模板”和“视觉/信息模板”，调用 Gemini Prompt Planner 生成结构化计划。
 4. `GenerationOrchestrator` 按有图/无图依赖关系调用模型 Adapter。
 5. 结果图写入 Vercel Blob，并通过 `application/x-ndjson` 逐张返回。
 6. 前端归并事件并写入 LocalStorage 历史。
@@ -18,7 +18,7 @@
 其他后端入口：
 
 - `GET /api/health`：脱敏配置状态。
-- `GET /api/capabilities`：模型、比例、分辨率、模板张数和上传限制。
+- `GET /api/capabilities`：模型、比例、分辨率、张数模板、视觉模板和上传限制。
 - `POST /api/uploads`：单张 PNG/JPEG/WebP，最大 4 MB。
 
 ## 关键模块
@@ -27,6 +27,7 @@
 - `backend/app.py`：FastAPI、CORS、路由和真实依赖组装。
 - `backend/domain.py`：统一请求、模板、Prompt、图片和流事件类型。
 - `backend/templates.py`：四种服务器模板，是单版张数的唯一事实来源。
+- `backend/visual_templates.py`：视觉模板、预览图、信息重点和选填字段注册表。
 - `backend/planner.py`：商品分析和结构化 Prompt 计划。
 - `backend/providers.py`：Nano Banana 2、Nano Banana Pro、Azure GPT-Image-2 Adapter。
 - `backend/sizing.py`：Azure 动态实际尺寸换算。
@@ -37,6 +38,7 @@
 - `src/features/generation/liveState.ts`：流事件纯函数归并。
 - `src/features/generation/components/ModelControls.tsx`：动态模型参数。
 - `src/features/generation/components/LiveResultsPanel.tsx`：逐张结果控制台。
+- `src/features/generation/components/VisualTemplatePicker.tsx`：模板摘要、右侧选择抽屉和动态选填信息。
 - `src/features/tasks/`：LocalStorage 历史和旧数据兼容。
 
 早期 Coze 档案仍位于 `WORKFLOWS.md` 和 `coze_nodes/`，它们不是当前真实生图运行依赖。
@@ -59,6 +61,7 @@ job_started → planning → plan_ready → variant_started
 ## 新需求通常改哪里
 
 - 改单版图片职责或张数：`backend/templates.py`，同时更新模板测试。
+- 新增整套视觉风格或信息字段：`backend/visual_templates.py`，并同步前端静态回退模板。
 - 加图片模型：`backend/providers.py`、`backend/app.py` 的路由注册和 Capabilities。
 - 改有图/无图并发关系：`backend/orchestrator.py`，必须先改测试。
 - 改比例和参数：`backend/sizing.py`、Provider Adapter 和 ModelControls。
@@ -66,6 +69,8 @@ job_started → planning → plan_ready → variant_started
 - 改上传限制：后端 `storage.py` 与前端 `UploadZone.tsx` 必须同步。
 
 不要把密钥写入前端、`VITE_*`、源码或日志；不要让后端下载任意用户 URL；不要把图 2 继续传给图 3，所有副图只共享原图或同版图 1。
+
+`visual_template_id` 只决定视觉方向和信息组织，`template_id` 仍然是张数与槽位职责的唯一来源。`supplemental_info` 全部选填；空字段代表未知，Planner 不得补写认证、产能、客户等事实。
 
 ## 本地运行与验证
 

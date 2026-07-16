@@ -21,10 +21,12 @@ from .domain import (
     ReferenceAsset,
     StreamEvent,
     TemplateDefinition,
+    VisualTemplateDefinition,
 )
 from .limiter import AsyncRateLimiter
 from .providers import ImageProvider
 from .templates import get_template
+from .visual_templates import get_visual_template
 
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,8 @@ class PlannerProtocol(Protocol):
         user_requirement: str,
         references: Sequence[BinaryAsset],
         language: str,
+        visual_template: VisualTemplateDefinition,
+        supplemental_info: dict[str, str],
     ) -> ProductContext:
         """分析商品上下文。"""
 
@@ -51,6 +55,8 @@ class PlannerProtocol(Protocol):
         language: str,
         target_model: str,
         variant_index: int,
+        visual_template: VisualTemplateDefinition,
+        supplemental_info: dict[str, str],
     ) -> PromptPlan:
         """生成单版 Prompt 计划。"""
 
@@ -306,6 +312,13 @@ class GenerationOrchestrator:
         yield StreamEvent(type="job_started", job_id=job_id, status="planning")
         try:
             template = get_template(request.template_id)
+            visual_template = get_visual_template(request.visual_template_id)
+            allowed_info_keys = {field.key for field in visual_template.fields}
+            supplemental_info = {
+                key: value
+                for key, value in request.supplemental_info.items()
+                if key in allowed_info_keys
+            }
             if template.image_type != request.image_type:
                 raise ValueError("图片类型与服务器模板不匹配")
             provider = self._providers.get(request.model)
@@ -321,6 +334,8 @@ class GenerationOrchestrator:
                 user_requirement=request.user_requirement,
                 references=references,
                 language=request.language,
+                visual_template=visual_template,
+                supplemental_info=supplemental_info,
             )
             spec = ImageSpec(
                 model=request.model,
@@ -339,6 +354,8 @@ class GenerationOrchestrator:
                     language=request.language,
                     target_model=request.model,
                     variant_index=variant_index,
+                    visual_template=visual_template,
+                    supplemental_info=supplemental_info,
                 )
                 yield StreamEvent(
                     type="plan_ready",

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 
 ImageMode = Literal["text-to-image", "image-to-image"]
@@ -101,6 +101,29 @@ class TemplateDefinition(BaseModel):
     slots: list[TemplateSlot] = Field(min_length=1)
 
 
+class VisualTemplateField(BaseModel):
+    """视觉模板可向用户收集的一条选填信息。"""
+
+    key: str = Field(min_length=1, max_length=64)
+    label: str = Field(min_length=1, max_length=40)
+    placeholder: str = Field(default="", max_length=160)
+    required: bool = False
+
+
+class VisualTemplateDefinition(BaseModel):
+    """控制整套图片风格和信息密度的视觉模板。"""
+
+    id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=40)
+    category: str = Field(min_length=1, max_length=24)
+    description: str = Field(min_length=1, max_length=160)
+    art_direction: str = Field(min_length=1, max_length=600)
+    information_focus: list[str] = Field(default_factory=list, max_length=12)
+    role_highlights: list[str] = Field(default_factory=list, max_length=8)
+    preview_images: list[str] = Field(default_factory=list, max_length=4)
+    fields: list[VisualTemplateField] = Field(default_factory=list, max_length=16)
+
+
 class ProductContext(BaseModel):
     """Prompt Planner 对商品和视觉约束的统一理解。"""
 
@@ -177,6 +200,7 @@ class GenerationRequest(BaseModel):
     mode: ImageMode
     image_type: ImageType
     template_id: str
+    visual_template_id: str = "standard_product"
     model: ImageModel
     aspect_ratio: str
     resolution: Resolution
@@ -184,7 +208,36 @@ class GenerationRequest(BaseModel):
     language: str = "zh-CN"
     variant_count: int = Field(default=1, ge=1, le=4)
     user_requirement: str = Field(min_length=1, max_length=4000)
+    supplemental_info: dict[str, str] = Field(default_factory=dict)
     reference_assets: list[ReferenceAsset] = Field(default_factory=list, max_length=10)
+
+    @field_validator("supplemental_info")
+    @classmethod
+    def validate_supplemental_info(cls, value: dict[str, str]) -> dict[str, str]:
+        """限制选填信息的数量和长度，避免把任意大对象送进 Prompt。
+
+        Args:
+            value: 前端提交的模板补充信息键值对。
+
+        Returns:
+            去除首尾空白、保留空值语义的安全字典。
+
+        Raises:
+            ValueError: 字段过多、键过长或单项内容过长时抛出。
+        """
+
+        if len(value) > 20:
+            raise ValueError("模板补充信息最多 20 项")
+        normalized: dict[str, str] = {}
+        for key, item in value.items():
+            clean_key = key.strip()
+            clean_value = item.strip()
+            if not clean_key or len(clean_key) > 64:
+                raise ValueError("模板补充信息字段名无效")
+            if len(clean_value) > 500:
+                raise ValueError(f"模板补充信息 {clean_key} 最多 500 字")
+            normalized[clean_key] = clean_value
+        return normalized
 
     @model_validator(mode="after")
     def validate_reference_mode(self) -> "GenerationRequest":

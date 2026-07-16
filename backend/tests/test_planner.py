@@ -8,6 +8,7 @@ import pytest
 from backend.domain import ProductContext, PromptPlanError
 from backend.planner import PromptPlanner
 from backend.templates import get_template
+from backend.visual_templates import get_visual_template
 
 
 class FakeGoogleClient:
@@ -131,3 +132,39 @@ async def test_planner_rejects_wrong_slot_count_after_retry() -> None:
             target_model="nano_banana_2",
             variant_index=1,
         )
+
+
+@pytest.mark.asyncio
+async def test_planner_includes_visual_template_and_verified_optional_information() -> None:
+    """模板风格与用户补充事实必须进入 Planner，且空字段不能被当成事实。"""
+
+    client = FakeGoogleClient([_valid_plan(6)])
+    planner = PromptPlanner(client=client, model="gemini-3.5-flash")
+
+    await planner.plan_variant(
+        template=get_template("product_set_01"),
+        visual_template=get_visual_template("supplier_strength"),
+        supplemental_info={
+            "company_name": "Happy Arts & Crafts Ningbo Ltd.",
+            "certifications": "FSC、BSCI、EN71",
+            "factory_capacity": "",
+        },
+        context=ProductContext(
+            product_name="木制益智玩具",
+            product_description="面向海外采购商的木制益智玩具",
+            visual_style="B2B 企业实力信息图",
+        ),
+        user_requirement="生成企业实力套图",
+        language="zh-CN",
+        target_model="nano_banana_2",
+        variant_index=1,
+    )
+
+    payload = client.requests[0][1]
+    instruction = json.loads(payload["contents"][0]["parts"][0]["text"])
+    assert instruction["visual_template"]["id"] == "supplier_strength"
+    assert instruction["verified_supplemental_info"] == {
+        "company_name": "Happy Arts & Crafts Ningbo Ltd.",
+        "certifications": "FSC、BSCI、EN71",
+    }
+    assert "可见文字只能来自用户明确提供的内容" in instruction["rules"]

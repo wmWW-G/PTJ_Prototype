@@ -18,6 +18,7 @@ from .providers import AzureImageProvider, GoogleImageProvider, ProviderRouter
 from .settings import Settings
 from .storage import MAX_UPLOAD_BYTES, BlobStorage, InvalidAssetError
 from .templates import TEMPLATES
+from .visual_templates import VISUAL_TEMPLATES
 
 
 logging.basicConfig(
@@ -199,6 +200,10 @@ def create_app(
                     "slots": [slot.model_dump() for slot in template.slots],
                 }
                 for template_id, template in TEMPLATES.items()
+            },
+            "visual_templates": {
+                template_id: template.model_dump()
+                for template_id, template in VISUAL_TEMPLATES.items()
             },
             "uploads": {
                 "max_file_bytes": MAX_UPLOAD_BYTES,
