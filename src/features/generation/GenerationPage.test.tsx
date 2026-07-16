@@ -44,4 +44,17 @@ describe("GenerationPage", () => {
       expect(screen.getAllByRole("button", { name: "全部下载" }).length).toBeGreaterThan(0);
     },
   );
+
+  it("真实生图页展示三个后端模型和分辨率档位", () => {
+    render(
+      <MemoryRouter>
+        <GenerationPage mode="text-to-image" />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByLabelText("生图模型")).toHaveTextContent("Nano Banana 2");
+    expect(screen.getByLabelText("生图模型")).toHaveTextContent("Nano Banana Pro");
+    expect(screen.getByLabelText("生图模型")).toHaveTextContent("GPT-Image-2");
+    expect(screen.getByLabelText("输出清晰度")).toHaveValue("2K");
+  });
 });

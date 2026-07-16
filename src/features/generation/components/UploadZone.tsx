@@ -6,6 +6,9 @@ interface UploadPreview { file: File; url: string; }
 interface UploadZoneProps {
   label: string;
   onChange?: (urls: string[]) => void;
+  onFilesChange?: (files: File[]) => void;
+  acceptedTypes?: string[];
+  maxFileSize?: number;
 }
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/bmp", "image/tiff", "image/gif"];
@@ -18,7 +21,13 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
  * @param props.onChange 预览 URL 变化后的回调。
  * @returns 可访问的上传区。
  */
-export function UploadZone({ label, onChange }: UploadZoneProps) {
+export function UploadZone({
+  label,
+  onChange,
+  onFilesChange,
+  acceptedTypes = ACCEPTED_TYPES,
+  maxFileSize = MAX_FILE_SIZE,
+}: UploadZoneProps) {
   const inputId = useId();
   const [previews, setPreviews] = useState<UploadPreview[]>([]);
   const [error, setError] = useState("");
@@ -31,9 +40,9 @@ export function UploadZone({ label, onChange }: UploadZoneProps) {
   function addFiles(files: File[]) {
     setError("");
     const nextFiles = files.slice(0, Math.max(0, 10 - previews.length));
-    const invalid = nextFiles.find((file) => !ACCEPTED_TYPES.includes(file.type) || file.size > MAX_FILE_SIZE);
+    const invalid = nextFiles.find((file) => !acceptedTypes.includes(file.type) || file.size > maxFileSize);
     if (invalid) {
-      setError(`${invalid.name} 格式不支持或超过 10MB`);
+      setError(`${invalid.name} 格式不支持或超过 ${Math.round(maxFileSize / 1024 / 1024)}MB`);
       return;
     }
     if (files.length + previews.length > 10) setError("单个上传区最多上传 10 张图片");
@@ -41,6 +50,7 @@ export function UploadZone({ label, onChange }: UploadZoneProps) {
     const next = [...previews, ...additions];
     setPreviews(next);
     onChange?.(next.map(({ url }) => url));
+    onFilesChange?.(next.map(({ file }) => file));
     console.info("[批图匠] 图片已加入上传区", { label, count: additions.length });
   }
 
@@ -50,6 +60,7 @@ export function UploadZone({ label, onChange }: UploadZoneProps) {
     const next = previews.filter((preview) => preview.url !== url);
     setPreviews(next);
     onChange?.(next.map((preview) => preview.url));
+    onFilesChange?.(next.map((preview) => preview.file));
   }
 
   return (
@@ -64,14 +75,14 @@ export function UploadZone({ label, onChange }: UploadZoneProps) {
         <input
           id={inputId}
           aria-label={label}
-          accept={ACCEPTED_TYPES.join(",")}
+          accept={acceptedTypes.join(",")}
           multiple
           type="file"
           onChange={(event) => addFiles(Array.from(event.target.files ?? []))}
         />
         <UploadCloud size={28} />
         <span>将图片拖到此处，或 <strong>点击上传</strong>（限 10 张）</span>
-        <small>支持 jpeg、png、webp、bmp、tiff、gif，单张不超过 10MB</small>
+        <small>支持 {acceptedTypes.map((type) => type.split("/")[1]).join("、")}，单张不超过 {Math.round(maxFileSize / 1024 / 1024)}MB</small>
       </label>
       {error && <p className={styles.errorText} role="alert">{error}</p>}
       {previews.length > 0 && (
