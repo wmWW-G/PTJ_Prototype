@@ -108,6 +108,8 @@ def test_capabilities_expose_optional_visual_templates() -> None:
     assert supplier["name"] == "企业实力套图"
     assert supplier["category"] == "企业实力"
     assert supplier["preview_images"]
+    assert supplier["generated_anchor_strategy"] == "independent"
+    assert len(set(supplier["role_compositions"])) == 6
     assert "company_name" in [field["key"] for field in supplier["fields"]]
     assert all(field["required"] is False for field in supplier["fields"])
 

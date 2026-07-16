@@ -183,3 +183,31 @@ async def test_text_mode_generates_anchor_before_fan_out() -> None:
     assert len(provider.calls) == 6
     assert all(call.references == ["anchor"] for call in provider.calls[1:])
     assert any(event.type == "anchor_completed" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_supplier_strength_text_mode_does_not_clone_overview_layout() -> None:
+    """企业实力套图的后五张必须独立文生图。
+
+    首张“企业总览”是已排版的复杂信息图，如果继续当作图生图参考，
+    模型会把它的九宫格、地图和图标一起复制到其他职责图。
+    """
+
+    provider = FakeProvider()
+    request = GenerationRequest(
+        mode="text-to-image",
+        image_type="set",
+        template_id="product_set_01",
+        visual_template_id="supplier_strength",
+        model="nano_banana_2",
+        aspect_ratio="1:1",
+        resolution="2K",
+        user_requirement="生成六张构图不同的企业实力套图",
+    )
+
+    events = [event async for event in _orchestrator(provider).stream(request)]
+
+    assert len(provider.calls) == 6
+    assert all(call.method == "generate" for call in provider.calls)
+    assert all(call.references == [] for call in provider.calls)
+    assert any(event.type == "job_completed" for event in events)

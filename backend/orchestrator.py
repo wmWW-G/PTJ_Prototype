@@ -378,9 +378,11 @@ class GenerationOrchestrator:
 
                 remaining_prompts = plan.image_prompts
                 active_references: Sequence[BinaryAsset] = references
+                use_generate_for_remaining = False
 
                 if not references:
-                    # 无图模式唯一串行依赖：必须先生成图 1，后续全部共享这张基准图。
+                    # 无图模式先生成图 1。标准商品套图会继续用它统一商品外观；
+                    # 企业实力等复杂信息图不能复用成品图，否则模型会把整个版式一起复制。
                     anchor_prompt = plan.image_prompts[0]
                     yield StreamEvent(
                         type="anchor_started",
@@ -427,6 +429,9 @@ class GenerationOrchestrator:
                         )
                     ]
                     remaining_prompts = plan.image_prompts[1:]
+                    if visual_template.generated_anchor_strategy == "independent":
+                        active_references = ()
+                        use_generate_for_remaining = True
 
                 # 所有互不依赖的槽位现在同时开始，实际并发由模型限流器控制。
                 tasks: list[asyncio.Task[tuple[_ImageExecutionResult, GeneratedBinary | None]]] = []
@@ -450,7 +455,7 @@ class GenerationOrchestrator:
                                 provider=provider,
                                 limiter=limiter,
                                 references=active_references,
-                                use_generate=False,
+                                use_generate=use_generate_for_remaining,
                             )
                         )
                     )

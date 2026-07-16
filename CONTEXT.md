@@ -32,7 +32,7 @@
 - `backend/providers.py`：Nano Banana 2、Nano Banana Pro、Azure GPT-Image-2 Adapter。
 - `backend/sizing.py`：Azure 动态实际尺寸换算。
 - `backend/limiter.py`：模型并发、RPM、供应商 `retry-after` 退避和错峰重试。
-- `backend/orchestrator.py`：有图全并发、无图基准图后分发、多方案循环。
+- `backend/orchestrator.py`：有图全并发、无图基准图或独立构图分发、多方案循环。
 - `backend/storage.py`：Vercel Blob 上传、保存、URL 白名单和 SSRF 防护。
 - `src/features/generation/api.ts`：上传、Capabilities 和 NDJSON 客户端。
 - `src/features/generation/liveState.ts`：流事件纯函数归并。
@@ -75,6 +75,8 @@ job_started → planning → plan_ready → variant_started
 Azure GPT-Image-2 当前最多三路并发，剩余槽位等待前一批完成，避免一版套图的五张副图同时冲击 East US 2 配额。429 必须优先遵守 Azure `retry-after-ms` / `Retry-After`，再叠加错峰延迟；不要重新提高到四路并发，除非已确认部署实际 RPM 和并发容量。
 
 企业实力模板的预览素材位于 `public/demo/generated/ai-supplier-*.jpg`，均为项目内通过 ImageGen 生成的原创演示图。不要重新使用用户提供的其他店铺截图或从截图裁切素材。
+
+企业实力文生套图使用 `generated_anchor_strategy="independent"`：图 1 仍先生成并正常返回，但图 2–6 不得把这张已排版的“企业总览”当图生图参考，应独立文生图。六张的商品身份、配色和品牌气质保持一致，但必须按 `role_compositions` 使用不同的版式骨架。有图模式仍共享用户上传的原始商品图，不受这条规则影响。
 
 ## 本地运行与验证
 

@@ -176,6 +176,15 @@ async def test_planner_includes_visual_template_and_verified_optional_informatio
         "认证背书",
         "产能与服务",
     ]
+    compositions = [
+        item["required_composition"]
+        for item in instruction["slot_visual_directions"]
+    ]
+    assert len(set(compositions)) == 6
+    assert "禁止九宫格" in compositions[0]
+    assert "研发工作台" in compositions[3]
+    assert "不生成证书" in compositions[4]
+    assert any("全局一致性只约束商品身份" in rule for rule in instruction["rules"])
     assert [item.title for item in plan.image_prompts] == [
         "企业总览",
         "仓储与交付",

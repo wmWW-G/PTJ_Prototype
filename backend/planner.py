@@ -228,6 +228,9 @@ class PromptPlanner:
         role_highlights = (
             visual_template.role_highlights if visual_template is not None else []
         )
+        role_compositions = (
+            visual_template.role_compositions if visual_template is not None else []
+        )
         # 把视觉模板的职责逐张绑定到固定槽位。结构模板仍决定数量和稳定 role，
         # 但“企业实力”等视觉模板可以覆盖标准套图的默认业务主题。
         slot_visual_directions = [
@@ -241,6 +244,11 @@ class PromptPlanner:
                 ),
                 "base_objective": slot.objective,
                 "base_composition": slot.composition,
+                "required_composition": (
+                    role_compositions[position]
+                    if position < len(role_compositions)
+                    else slot.composition
+                ),
             }
             for position, slot in enumerate(template.slots)
         ]
@@ -254,6 +262,8 @@ class PromptPlanner:
                 "每个 prompt 必须独立完整，并包含全局一致性要求",
                 "每张图必须严格覆盖 slot_visual_directions 中对应的 title，且六张主题不得重复",
                 "slot_visual_directions 的 title 优先于 template.slots 的默认主题，但不得改变 index 和 role",
+                "每个 prompt 必须严格执行对应的 required_composition，不得改用其他槽位的版式",
+                "全局一致性只约束商品身份、配色和品牌气质，不得要求全部图片复用同一构图、网格、图标、背景或信息块",
                 "缺少企业事实时使用不含数字、认证、品牌和客户名称的通用流程画面，不得编造背书",
             ],
             "variant_index": variant_index,

@@ -123,6 +123,8 @@ class VisualTemplateDefinition(BaseModel):
     art_direction: str = Field(min_length=1, max_length=600)
     information_focus: list[str] = Field(default_factory=list, max_length=12)
     role_highlights: list[str] = Field(default_factory=list, max_length=8)
+    role_compositions: list[str] = Field(default_factory=list, max_length=8)
+    generated_anchor_strategy: Literal["reuse", "independent"] = "reuse"
     preview_images: list[str] = Field(default_factory=list, max_length=4)
     fields: list[VisualTemplateField] = Field(default_factory=list, max_length=16)
 
