@@ -13,9 +13,38 @@ from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 ImageMode = Literal["text-to-image", "image-to-image"]
 ImageType = Literal["main", "set", "listing", "poster"]
-ImageModel = Literal["nano_banana_2", "nano_banana_pro", "gpt_image_2_azure"]
-Resolution = Literal["1K", "2K", "4K"]
+ImageModel = Literal["nano_banana_2", "nano_banana_pro", "gpt_image_2_openrouter"]
+Resolution = Literal["512", "1K", "2K", "4K"]
 Quality = Literal["low", "medium", "high"]
+
+
+# 这些比例直接对应各模型官方能力，而不是前端自行拼出的公共交集：
+# - Gemini 3.1 Flash Image（Nano Banana 2）支持 14 种比例；
+# - Gemini 3 Pro Image（Nano Banana Pro）支持其中 10 种常规比例；
+# - GPT-Image-2 原生 API 支持长短边不超过 3:1 的灵活尺寸。OpenRouter 当前
+#   专用端点尚未开放 size/aspect_ratio，因此这里只登记常用且符合原生限制的
+#   下拉预设，Adapter 继续把比例作为构图约束写入 Prompt。
+MODEL_ASPECT_RATIOS: dict[ImageModel, tuple[str, ...]] = {
+    "nano_banana_2": (
+        "1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1",
+        "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9",
+    ),
+    "nano_banana_pro": (
+        "1:1", "2:3", "3:2", "3:4", "4:3",
+        "4:5", "5:4", "9:16", "16:9", "21:9",
+    ),
+    "gpt_image_2_openrouter": (
+        "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4",
+        "9:16", "16:9", "1:2", "2:1", "9:21", "21:9", "1:3", "3:1",
+    ),
+}
+
+MODEL_RESOLUTIONS: dict[ImageModel, tuple[Resolution, ...]] = {
+    "nano_banana_2": ("512", "1K", "2K", "4K"),
+    "nano_banana_pro": ("1K", "2K", "4K"),
+    # OpenRouter 用 low/medium/high 控制质量，前端继续用 1K/2K/4K 保存档位意图。
+    "gpt_image_2_openrouter": ("1K", "2K", "4K"),
+}
 
 
 class UnsupportedTemplateError(ValueError):
@@ -125,7 +154,7 @@ class VisualTemplateDefinition(BaseModel):
     role_highlights: list[str] = Field(default_factory=list, max_length=8)
     role_compositions: list[str] = Field(default_factory=list, max_length=8)
     generated_anchor_strategy: Literal["reuse", "independent"] = "reuse"
-    preview_images: list[str] = Field(default_factory=list, max_length=4)
+    preview_images: list[str] = Field(default_factory=list, max_length=6)
     fields: list[VisualTemplateField] = Field(default_factory=list, max_length=16)
 
 
@@ -158,29 +187,6 @@ class PromptPlan(BaseModel):
     image_prompts: list[ImagePrompt] = Field(min_length=1)
 
 
-class AzureSize(BaseModel):
-    """Azure GPT-Image-2 接口使用的像素尺寸。"""
-
-    width: int
-    height: int
-
-    @property
-    def api_value(self) -> str:
-        """返回 Azure API 接收的 ``宽x高`` 字符串。
-
-        Args:
-            无。
-
-        Returns:
-            例如 ``"1024x1024"`` 的尺寸字符串。
-
-        Raises:
-            不抛出异常。
-        """
-
-        return f"{self.width}x{self.height}"
-
-
 class ImageSpec(BaseModel):
     """与具体供应商无关的单张图片生成规格。"""
 
@@ -203,7 +209,9 @@ class GeneratedBinary(BaseModel):
 class GenerationRequest(BaseModel):
     """前端提交的一次完整生图任务。"""
 
-    mode: ImageMode
+    # mode 保留在领域对象中，供 Planner、编排器和历史事件读取；调用方无需决定。
+    # 默认值同时兼容旧客户端生成的 OpenAPI SDK，真正值会在下方校验器中按参考图覆盖。
+    mode: ImageMode = "text-to-image"
     image_type: ImageType
     template_id: str
     visual_template_id: str = "standard_product"
@@ -212,7 +220,7 @@ class GenerationRequest(BaseModel):
     resolution: Resolution
     quality: Quality | None = None
     language: str = "zh-CN"
-    variant_count: int = Field(default=1, ge=1, le=4)
+    variant_count: int = Field(default=1, ge=1, le=10)
     user_requirement: str = Field(min_length=1, max_length=4000)
     supplemental_info: dict[str, str] = Field(default_factory=dict)
     reference_assets: list[ReferenceAsset] = Field(default_factory=list, max_length=10)
@@ -245,24 +253,49 @@ class GenerationRequest(BaseModel):
             normalized[clean_key] = clean_value
         return normalized
 
-    @model_validator(mode="after")
-    def validate_reference_mode(self) -> "GenerationRequest":
-        """确保图生图请求确实带有参考图。
+    @model_validator(mode="before")
+    @classmethod
+    def infer_reference_mode(cls, value: Any) -> Any:
+        """根据参考图是否存在自动确定文生图或图生图模式。
 
         Args:
-            无；Pydantic 会在模型构造后调用本方法。
+            value: Pydantic 尚未构造模型前收到的原始请求对象。
 
         Returns:
-            校验通过的请求对象本身。
+            写入正确 ``mode`` 的请求副本；非字典输入原样交回 Pydantic 处理。
 
         Raises:
-            ValueError: 图生图没有参考图，或文生图错误携带参考图时抛出。
+            不主动抛出异常；字段类型和参考图结构仍由 Pydantic 正常校验。
         """
 
-        if self.mode == "image-to-image" and not self.reference_assets:
-            raise ValueError("图生图模式至少需要一张参考图")
-        if self.mode == "text-to-image" and self.reference_assets:
-            raise ValueError("文生图模式不能携带参考图")
+        if not isinstance(value, dict):
+            return value
+
+        normalized = dict(value)
+        # 旧版浏览器历史任务和旧客户端可能仍提交 Azure 内部模型名。这个映射
+        # 只负责无损迁移，不会保留或调用任何 Azure 配置与请求路径。
+        if normalized.get("model") == "gpt_image_2_azure":
+            normalized["model"] = "gpt_image_2_openrouter"
+        normalized["mode"] = (
+            "image-to-image" if normalized.get("reference_assets") else "text-to-image"
+        )
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_model_capabilities(self) -> GenerationRequest:
+        """拒绝当前模型官方能力之外的比例或清晰度。
+
+        Returns:
+            已确认模型、比例和清晰度组合合法的请求本身。
+
+        Raises:
+            ValueError: 比例或清晰度不属于当前模型能力时抛出。
+        """
+
+        if self.aspect_ratio not in MODEL_ASPECT_RATIOS[self.model]:
+            raise ValueError(f"{self.model} 不支持画面比例 {self.aspect_ratio}")
+        if self.resolution not in MODEL_RESOLUTIONS[self.model]:
+            raise ValueError(f"{self.model} 不支持清晰度 {self.resolution}")
         return self
 
 

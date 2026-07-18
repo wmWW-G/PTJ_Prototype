@@ -48,7 +48,9 @@ VISUAL_TEMPLATES: dict[str, VisualTemplateDefinition] = {
         preview_images=[
             "demo/generated/mug-front.jpg",
             "demo/generated/mug-handle.jpg",
+            "demo/generated/mug-rim.jpg",
             "demo/generated/mug-home.jpg",
+            "demo/generated/mug-office.jpg",
             "demo/generated/mug-combo.jpg",
         ],
         fields=[
@@ -85,8 +87,10 @@ VISUAL_TEMPLATES: dict[str, VisualTemplateDefinition] = {
         preview_images=[
             "demo/generated/ai-supplier-factory.jpg",
             "demo/generated/ai-supplier-warehouse.jpg",
-            "demo/generated/ai-supplier-design.jpg",
             "demo/generated/ai-supplier-quality.jpg",
+            "demo/generated/ai-supplier-design.jpg",
+            "demo/generated/ai-supplier-warehouse.jpg",
+            "demo/generated/ai-supplier-factory.jpg",
         ],
         fields=[
             _field("company_name", "公司名称", "例如：Ningbo Example Manufacturing Co., Ltd."),
@@ -115,6 +119,8 @@ VISUAL_TEMPLATES: dict[str, VisualTemplateDefinition] = {
             "demo/generated/mug-rim.jpg",
             "demo/generated/mug-handle.jpg",
             "demo/generated/mug-office.jpg",
+            "demo/generated/mug-home.jpg",
+            "demo/generated/mug-combo.jpg",
         ],
         fields=[
             _field("product_name", "产品名称", "例如：骨瓷咖啡杯"),
@@ -140,6 +146,8 @@ VISUAL_TEMPLATES: dict[str, VisualTemplateDefinition] = {
             "demo/generated/mug-office.jpg",
             "demo/generated/mug-front.jpg",
             "demo/generated/mug-combo.jpg",
+            "demo/generated/mug-handle.jpg",
+            "demo/generated/mug-rim.jpg",
         ],
         fields=[
             _field("target_audience", "目标人群", "例如：城市独居青年"),

@@ -35,13 +35,18 @@ const DEFAULT_TEMPLATE_IDS: Record<GenerationTask["imageType"], string> = {
  * @returns 满足当前 GenerationTask 接口的兼容对象。
  */
 function normalizeTask(task: Partial<GenerationTask> & Pick<GenerationTask, "id" | "mode" | "prompt" | "imageType" | "createdAt">): GenerationTask {
+  // 迁移旧版浏览器中保存的 Azure 内部模型名，确保“重新生成”直接改走
+  // OpenRouter；这里不保留任何 Azure Endpoint 或 Key。
+  const normalizedModel = task.model === "gpt_image_2_azure"
+    ? "gpt_image_2_openrouter"
+    : (task.model ?? "Ptu1.0");
   return {
     id: task.id,
     mode: task.mode,
     imageType: task.imageType,
     retouchMode: task.retouchMode,
     prompt: task.prompt,
-    model: task.model ?? "Ptu1.0",
+    model: normalizedModel,
     aspectRatio: task.aspectRatio ?? "1:1",
     templateId: task.templateId ?? DEFAULT_TEMPLATE_IDS[task.imageType],
     visualTemplateId: task.visualTemplateId ?? "standard_product",

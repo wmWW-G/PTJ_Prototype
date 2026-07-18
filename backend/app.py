@@ -9,12 +9,17 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from .domain import GenerationRequest, StreamEvent
+from .domain import (
+    MODEL_ASPECT_RATIOS,
+    MODEL_RESOLUTIONS,
+    GenerationRequest,
+    StreamEvent,
+)
 from .google_client import GoogleVertexClient
 from .limiter import AsyncRateLimiter
 from .orchestrator import GenerationOrchestrator
 from .planner import PromptPlanner
-from .providers import AzureImageProvider, GoogleImageProvider, ProviderRouter
+from .providers import GoogleImageProvider, OpenRouterImageProvider, ProviderRouter
 from .settings import Settings
 from .storage import MAX_UPLOAD_BYTES, BlobStorage, InvalidAssetError
 from .templates import TEMPLATES
@@ -55,7 +60,7 @@ def _build_orchestrator(settings: Settings, storage: BlobStorage) -> GenerationO
         storage: 同一应用共享的 Blob 存储。
 
     Returns:
-        可执行真实 Google/Azure 调用的生成编排器。
+        可执行真实 Google/OpenRouter 调用的生成编排器。
 
     Raises:
         ValueError: Google 服务账号 JSON 不合法时抛出。
@@ -72,10 +77,12 @@ def _build_orchestrator(settings: Settings, storage: BlobStorage) -> GenerationO
         model=settings.google_prompt_planner_model,
     )
     google_provider = GoogleImageProvider(google_client)
-    azure_provider = AzureImageProvider(
-        endpoint=settings.azure_openai_endpoint,
-        api_key=settings.azure_openai_api_key,
-        deployment=settings.azure_gpt_image_2_deployment,
+    openrouter_provider = OpenRouterImageProvider(
+        api_key=settings.openrouter_api_key,
+        model=settings.openrouter_gpt_image_2_model,
+        base_url=settings.openrouter_base_url,
+        site_url=settings.openrouter_site_url,
+        app_name=settings.openrouter_app_name,
     )
     return GenerationOrchestrator(
         planner=planner,
@@ -83,16 +90,16 @@ def _build_orchestrator(settings: Settings, storage: BlobStorage) -> GenerationO
             {
                 "nano_banana_2": google_provider,
                 "nano_banana_pro": google_provider,
-                "gpt_image_2_azure": azure_provider,
+                "gpt_image_2_openrouter": openrouter_provider,
             }
         ),
         storage=storage,
         limiters={
             "nano_banana_2": AsyncRateLimiter(max_concurrency=4, requests_per_minute=60),
             "nano_banana_pro": AsyncRateLimiter(max_concurrency=3, requests_per_minute=40),
-            # 线上实测 East US 2 可稳定处理三路图片请求；其余槽位排队可避免
-            # 五张副图同时冲击配额，也能在 Vercel 300 秒时限内完成整套图片。
-            "gpt_image_2_azure": AsyncRateLimiter(
+            # OpenRouter 实际限额取决于当前 Key 的额度与上游路由。保守使用三路
+            # 并发和六次/分钟，并优先遵守响应中的 Retry-After，避免批量套图突发。
+            "gpt_image_2_openrouter": AsyncRateLimiter(
                 max_concurrency=3,
                 requests_per_minute=6,
                 retry_delays=(10.0, 30.0),
@@ -173,27 +180,28 @@ def create_app(
             不抛出异常。
         """
 
-        common_ratios = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"]
         return {
             "models": {
                 "nano_banana_2": {
                     "label": "Nano Banana 2",
-                    "aspect_ratios": common_ratios,
-                    "resolutions": ["1K", "2K", "4K"],
+                    "aspect_ratios": list(MODEL_ASPECT_RATIOS["nano_banana_2"]),
+                    "resolutions": list(MODEL_RESOLUTIONS["nano_banana_2"]),
                     "quality": False,
                     "preview_resolutions": ["4K"],
                 },
                 "nano_banana_pro": {
                     "label": "Nano Banana Pro",
-                    "aspect_ratios": common_ratios,
-                    "resolutions": ["1K", "2K", "4K"],
+                    "aspect_ratios": list(MODEL_ASPECT_RATIOS["nano_banana_pro"]),
+                    "resolutions": list(MODEL_RESOLUTIONS["nano_banana_pro"]),
                     "quality": False,
                     "preview_resolutions": ["4K"],
                 },
-                "gpt_image_2_azure": {
+                "gpt_image_2_openrouter": {
                     "label": "GPT-Image-2",
-                    "aspect_ratios": common_ratios,
-                    "resolutions": ["1K", "2K", "4K"],
+                    # GPT 原生支持 3:1 内的灵活尺寸；这里返回常用合法预设。
+                    # OpenRouter 当前未开放尺寸字段，Adapter 仍只把比例写入 Prompt。
+                    "aspect_ratios": list(MODEL_ASPECT_RATIOS["gpt_image_2_openrouter"]),
+                    "resolutions": list(MODEL_RESOLUTIONS["gpt_image_2_openrouter"]),
                     "quality": True,
                     "qualities": ["low", "medium", "high"],
                 },
@@ -216,8 +224,8 @@ def create_app(
                 "max_files": 10,
                 "mime_types": ["image/png", "image/jpeg", "image/webp"],
             },
-            "max_variant_count": 4,
-            "max_output_images": 24,
+            "max_variant_count": 10,
+            "max_output_images": 60,
         }
 
     @app.post("/api/uploads")
@@ -265,13 +273,15 @@ def create_app(
         """
 
         nonlocal runtime_orchestrator
+        # 配置按当前供应商检查，避免 OpenRouter 暂未配置时连带阻断两个 Google
+        # 图片模型。Planner 和 Blob 是三款模型的共同依赖，因此始终检查。
+        missing = runtime_settings.missing_for_model(request.model)
+        if missing:
+            raise HTTPException(
+                status_code=503,
+                detail={"message": "真实生图尚未完成服务端配置", "missing": missing},
+            )
         if runtime_orchestrator is None:
-            missing = runtime_settings.missing_configuration()
-            if missing:
-                raise HTTPException(
-                    status_code=503,
-                    detail={"message": "真实生图尚未完成服务端配置", "missing": missing},
-                )
             try:
                 # 默认存储一定是 BlobStorage；只有测试替身才会同时注入 orchestrator。
                 if not isinstance(runtime_storage, BlobStorage):

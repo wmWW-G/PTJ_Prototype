@@ -18,7 +18,9 @@ export const DEFAULT_VISUAL_TEMPLATES: Record<string, VisualTemplateCapability> 
     preview_images: [
       "demo/generated/mug-front.jpg",
       "demo/generated/mug-handle.jpg",
+      "demo/generated/mug-rim.jpg",
       "demo/generated/mug-home.jpg",
+      "demo/generated/mug-office.jpg",
       "demo/generated/mug-combo.jpg",
     ],
     fields: [
@@ -40,8 +42,10 @@ export const DEFAULT_VISUAL_TEMPLATES: Record<string, VisualTemplateCapability> 
     preview_images: [
       "demo/generated/ai-supplier-factory.jpg",
       "demo/generated/ai-supplier-warehouse.jpg",
-      "demo/generated/ai-supplier-design.jpg",
       "demo/generated/ai-supplier-quality.jpg",
+      "demo/generated/ai-supplier-design.jpg",
+      "demo/generated/ai-supplier-warehouse.jpg",
+      "demo/generated/ai-supplier-factory.jpg",
     ],
     fields: [
       { key: "company_name", label: "公司名称", placeholder: "例如：Ningbo Example Manufacturing Co., Ltd.", required: false },
@@ -67,6 +71,8 @@ export const DEFAULT_VISUAL_TEMPLATES: Record<string, VisualTemplateCapability> 
       "demo/generated/mug-rim.jpg",
       "demo/generated/mug-handle.jpg",
       "demo/generated/mug-office.jpg",
+      "demo/generated/mug-home.jpg",
+      "demo/generated/mug-combo.jpg",
     ],
     fields: [
       { key: "product_name", label: "产品名称", placeholder: "例如：骨瓷咖啡杯", required: false },
@@ -89,6 +95,8 @@ export const DEFAULT_VISUAL_TEMPLATES: Record<string, VisualTemplateCapability> 
       "demo/generated/mug-office.jpg",
       "demo/generated/mug-front.jpg",
       "demo/generated/mug-combo.jpg",
+      "demo/generated/mug-handle.jpg",
+      "demo/generated/mug-rim.jpg",
     ],
     fields: [
       { key: "target_audience", label: "目标人群", placeholder: "例如：城市独居青年", required: false },
@@ -253,8 +261,8 @@ export function VisualTemplatePicker({
               <>
                 <div className={styles.detailView}>
                   <div className={styles.detailPreview} aria-label={`${detailTemplate.name}预览图`}>
-                    {detailTemplate.preview_images.slice(0, 4).map((image, index) => (
-                      <img key={image} src={assetPath(image)} alt={`${detailTemplate.name}示例 ${index + 1}`} />
+                    {detailTemplate.preview_images.slice(0, 6).map((image, index) => (
+                      <img key={`${image}-${index}`} src={assetPath(image)} alt={`${detailTemplate.name}示例 ${index + 1}`} />
                     ))}
                   </div>
 

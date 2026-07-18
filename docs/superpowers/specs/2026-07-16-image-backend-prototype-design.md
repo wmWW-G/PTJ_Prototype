@@ -1,5 +1,7 @@
 # 批图匠真实生图后端原型设计规格
 
+> 历史设计说明：2026-07-18 起，本文中的 Azure GPT-Image-2 实现已由 OpenRouter `openai/gpt-image-2` 替代；当前运行事实以 `CONTEXT.md` 和代码为准。
+
 ## 1. 目标
 
 在现有 React + TypeScript + Vite 高保真原型上，接入一个可部署到 Vercel 的 Python + FastAPI 后端，让“批量文生图”和“批量图生图”能够真实调用以下模型：

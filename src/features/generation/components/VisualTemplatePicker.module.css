@@ -59,9 +59,8 @@
 .emptyCategory { grid-column: 1 / -1; min-height: 220px; display: grid; place-items: center; align-content: center; gap: 8px; color: var(--ink-500); font-size: 11px; }
 
 .detailView { overflow-y: auto; padding: 18px 22px 24px; }
-.detailPreview { height: 280px; display: grid; grid-template-columns: 1.35fr .65fr; grid-template-rows: repeat(3, 1fr); gap: 4px; overflow: hidden; border-radius: 12px; background: #eee8e1; }
+.detailPreview { height: 280px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); gap: 4px; overflow: hidden; border-radius: 12px; background: #eee8e1; }
 .detailPreview img { width: 100%; height: 100%; object-fit: cover; }
-.detailPreview img:first-child { grid-row: 1 / -1; }
 .detailIntro { display: grid; gap: 8px; padding: 16px 2px 18px; border-bottom: 1px solid var(--line); }
 .detailIntro > span { width: max-content; padding: 4px 8px; border-radius: 999px; color: var(--brand-700); background: var(--brand-50); font-size: 9px; font-weight: 750; }
 .detailIntro p { margin: 0; color: var(--ink-800); font-size: 12px; font-weight: 650; line-height: 1.55; }
@@ -89,7 +88,7 @@
   .infoGrid { grid-template-columns: 1fr; }
   .infoGrid label:last-child:nth-child(odd) { grid-column: auto; }
   .templateGrid { grid-template-columns: 1fr; }
-  .detailPreview { height: 220px; }
+  .detailPreview { height: 330px; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(3, 1fr); }
   .detailRoles { grid-template-columns: 1fr; }
   .detailFields > div { grid-template-columns: 1fr; gap: 4px; }
 }

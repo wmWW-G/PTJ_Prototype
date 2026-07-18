@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -59,6 +59,9 @@ describe("VisualTemplatePicker", () => {
     expect(screen.getByText("这套会生成什么")).toBeInTheDocument();
     expect(screen.getByText("企业总览")).toBeInTheDocument();
     expect(screen.getByText("可补充信息（均选填）")).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("企业实力套图预览图")).getAllByRole("img"),
+    ).toHaveLength(6);
 
     await user.click(screen.getByRole("button", { name: "选择并使用此模板" }));
     expect(screen.queryByRole("dialog", { name: "选择生图模板" })).not.toBeInTheDocument();

@@ -2,6 +2,16 @@ import type { GenerationMode } from "../tasks/types";
 import type { ImageType } from "../tasks/types";
 
 /**
+ * 页面级模式与持久化任务模式分离。
+ *
+ * `generate` 是统一生图入口；真正保存到任务里的 `text-to-image` 或
+ * `image-to-image` 由后端根据是否存在参考图自动决定。
+ */
+export type GenerationPageMode =
+  | "generate"
+  | Extract<GenerationMode, "ai-retouch" | "outfit-swap">;
+
+/**
  * 四种电商图片类型每次生成的基础张数。
  *
  * 这是原站真实业务规则：主图和海报各 1 张，套图 6 张，详情图 5 张。
@@ -22,21 +32,13 @@ export interface GenerationPageConfig {
   hasBackground: boolean;
 }
 
-/** 四种业务页的稳定字段配置，页面通过它复用同一套交互结构。 */
-export const GENERATION_CONFIG: Record<GenerationMode, GenerationPageConfig> = {
-  "text-to-image": {
-    title: "批量文生图",
-    promptLabel: "产品+卖点",
-    promptPlaceholder: "例如：陶瓷马克杯，防烫手柄，北欧简约风",
-    uploadLabels: [],
-    hasImageTypes: true,
-    hasBackground: false,
-  },
-  "image-to-image": {
-    title: "批量图生图",
-    promptLabel: "产品+卖点",
-    promptPlaceholder: "描述希望保留的商品特征和需要优化的画面",
-    uploadLabels: ["上传商品参考图"],
+/** 三个业务入口的稳定字段配置，页面通过它复用同一套交互结构。 */
+export const GENERATION_CONFIG: Record<GenerationPageMode, GenerationPageConfig> = {
+  generate: {
+    title: "批量生图",
+    promptLabel: "补充文字要求（选填）",
+    promptPlaceholder: "可补充：商品卖点、使用场景、画面风格，以及必须保留或避免的内容",
+    uploadLabels: ["上传商品参考图（选填）"],
     hasImageTypes: true,
     hasBackground: true,
   },

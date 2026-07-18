@@ -1,6 +1,5 @@
 import {
   ImagePlus,
-  Images,
   ScanLine,
   Shirt,
   Sparkles,
@@ -12,15 +11,14 @@ import styles from "./AppShell.module.css";
 interface SidebarProps { tasks: GenerationTask[]; }
 
 const tools = [
-  { to: "/text-to-image", label: "批量文生图", icon: ImagePlus },
-  { to: "/image-to-image", label: "批量图生图", icon: Images },
+  { to: "/generation", label: "批量生图", icon: ImagePlus },
   { to: "/ai-retouch", label: "批量AI修图", icon: ScanLine },
   { to: "/outfit-swap", label: "批量模特换装", icon: Shirt },
 ];
 
 const modeNames: Record<GenerationTask["mode"], string> = {
-  "text-to-image": "批量文生图",
-  "image-to-image": "批量图生图",
+  "text-to-image": "文生图",
+  "image-to-image": "图生图",
   "ai-retouch": "批量AI修图",
   "outfit-swap": "批量模特换装",
 };

@@ -2,7 +2,36 @@
 export type LiveImageModel =
   | "nano_banana_2"
   | "nano_banana_pro"
-  | "gpt_image_2_azure";
+  | "gpt_image_2_openrouter";
+
+/**
+ * 产品界面使用的模型名称与展示顺序。
+ *
+ * 真实供应商模型名仍保留在请求字段中，确保后端 Adapter 不受品牌命名影响；
+ * 前端只显示 PTJ 系列名称，避免能力接口返回的供应商标签穿透到用户界面。
+ */
+export const LIVE_MODEL_DISPLAY_ORDER: LiveImageModel[] = [
+  "gpt_image_2_openrouter",
+  "nano_banana_2",
+  "nano_banana_pro",
+];
+
+export const LIVE_MODEL_DISPLAY_NAMES: Record<LiveImageModel, string> = {
+  gpt_image_2_openrouter: "PTJ-1",
+  nano_banana_2: "PTJ-2",
+  nano_banana_pro: "PTJ-3",
+};
+
+/**
+ * 把内部模型标识转换成产品界面的 PTJ 名称。
+ *
+ * @param model 任务中保存的模型标识；可能包含旧版或 Mock 模型名。
+ * @returns 当前真实模型对应的 PTJ 名称；未知模型保持原值，空值显示横线。
+ */
+export function getLiveModelDisplayName(model?: string): string {
+  if (!model) return "—";
+  return LIVE_MODEL_DISPLAY_NAMES[model as LiveImageModel] ?? model;
+}
 
 /** 后端结构化 Prompt 中的单张图片计划。 */
 export interface PlannedImagePrompt {
@@ -30,13 +59,15 @@ export interface ReferenceAssetPayload {
 
 /** 提交给 FastAPI 的真实生图请求。 */
 export interface LiveGenerationRequest {
-  mode: "text-to-image" | "image-to-image";
+  /**
+   * 不由前端提交 mode；后端根据 reference_assets 是否为空自动选择文生图或图生图。
+   */
   image_type: "main" | "set" | "listing" | "poster";
   template_id: string;
   visual_template_id: string;
   model: LiveImageModel;
   aspect_ratio: string;
-  resolution: "1K" | "2K" | "4K";
+  resolution: "512" | "1K" | "2K" | "4K";
   quality?: "low" | "medium" | "high";
   language?: string;
   variant_count: number;
@@ -61,7 +92,7 @@ export interface GenerationStreamEvent {
 export interface ModelCapability {
   label: string;
   aspect_ratios: string[];
-  resolutions: Array<"1K" | "2K" | "4K">;
+  resolutions: Array<"512" | "1K" | "2K" | "4K">;
   quality: boolean;
   qualities?: Array<"low" | "medium" | "high">;
   preview_resolutions?: string[];

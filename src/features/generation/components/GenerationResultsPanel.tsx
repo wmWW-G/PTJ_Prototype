@@ -2,14 +2,11 @@ import {
   Check,
   Copy,
   Download,
-  Grid2X2,
   ImageOff,
-  List,
-  PencilLine,
-  RotateCcw,
 } from "lucide-react";
 import { useState } from "react";
-import type { GenerationMode, GenerationTask, ImageType } from "../../tasks/types";
+import type { GenerationTask, ImageType } from "../../tasks/types";
+import { getLiveModelDisplayName } from "../liveTypes";
 import styles from "../GenerationPage.module.css";
 
 const imageTypeLabels: Record<ImageType, string> = {
@@ -46,10 +43,7 @@ function formatTaskTime(value: string): string {
 }
 
 interface GenerationResultsPanelProps {
-  mode: GenerationMode;
   tasks: GenerationTask[];
-  onEdit: (task: GenerationTask) => void;
-  onRegenerate: (task: GenerationTask) => void;
 }
 
 /**
@@ -57,23 +51,15 @@ interface GenerationResultsPanelProps {
  *
  * 这里只突出最新任务，避免旧版连续任务卡挤压生成结果；历史任务仍可从左侧导航进入。
  *
- * @param props.mode 当前生成模式，用于展示对应模型代码。
- * @param props.tasks 当前模式下按时间从新到旧排列的任务。
- * @param props.onEdit 重新编辑回调，把当前任务参数回填到左侧表单。
- * @param props.onRegenerate 再次生成回调，复用任务参数创建新任务。
+ * @param props.tasks 文生图和图生图按时间从新到旧排列的统一任务列表。
  * @returns 包含进度、图片网格、任务元数据和后续操作的结果区域。
  */
 export function GenerationResultsPanel({
-  mode,
   tasks,
-  onEdit,
-  onRegenerate,
 }: GenerationResultsPanelProps) {
   const [notice, setNotice] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const task = tasks[0];
-  const modelCode = mode === "text-to-image" ? "t2i_img" : "i2i_img";
 
   if (!task) {
     return (
@@ -90,7 +76,6 @@ export function GenerationResultsPanel({
   const isGenerating = task.status === "generating" || task.status === "queued";
   const completedCount = isGenerating ? Math.max(1, Math.min(4, task.resultImages.length)) : task.resultImages.length;
   const resultCount = Math.max(task.resultImages.length, 1);
-  const selectedImage = task.resultImages[selectedIndex] ?? task.resultImages[0];
 
   return (
     <aside className={styles.resultsPanel} aria-label="生成内容">
@@ -98,7 +83,7 @@ export function GenerationResultsPanel({
       <section className={styles.resultWorkspace}>
         <header className={styles.resultWorkspaceHeader}>
           <div className={styles.resultTitleRow}>
-            <h2>本次生成结果</h2>
+            <h2>生成记录</h2>
             <span className={`${styles.taskStatus} ${isGenerating ? styles.statusRunning : styles.statusDone}`}>
               <i />{isGenerating ? `正在生成 ${completedCount}/${resultCount}` : "已完成"}
             </span>
@@ -109,24 +94,18 @@ export function GenerationResultsPanel({
           </div>
         </header>
 
-        <div className={styles.progressRail} aria-label="任务进度">
-          <div className={styles.completedStage}><i /><span>排队中</span></div>
-          <div className={isGenerating ? styles.currentStage : styles.completedStage}><i /><span>正在生成</span></div>
-          <div className={!isGenerating ? styles.completedStage : ""}><i /><span>已完成</span></div>
-        </div>
-
         <div className={styles.resultToolbar}>
           <div>
             <strong>{imageTypeLabels[task.imageType]} · {task.resultImages.length || "生成中"}张</strong>
-            <span>{task.prompt}</span>
-          </div>
-          <div className={styles.viewSwitch} aria-label="结果视图">
-            <button type="button" className={viewMode === "grid" ? styles.activeView : ""} onClick={() => setViewMode("grid")}><Grid2X2 size={15} />网格视图</button>
-            <button type="button" className={viewMode === "list" ? styles.activeView : ""} onClick={() => setViewMode("list")}><List size={15} />列表视图</button>
+            <div className={styles.resultMetaLine} aria-label="任务生成信息">
+              <span><b>生图时间</b>{formatTaskTime(task.createdAt)}</span>
+              <span><b>模型</b>{getLiveModelDisplayName(task.model)}</span>
+              <span><b>尺寸</b>{task.aspectRatio}</span>
+            </div>
           </div>
         </div>
 
-        <div className={`${styles.resultGallery} ${viewMode === "list" ? styles.listGallery : ""}`} data-count={task.resultImages.length}>
+        <div className={styles.resultGallery} data-count={task.resultImages.length}>
           {isGenerating && task.resultImages.length === 0 ? (
             Array.from({ length: 6 }, (_, index) => (
               <div className={styles.resultSkeleton} key={index}>
@@ -150,28 +129,10 @@ export function GenerationResultsPanel({
           )}
         </div>
 
-        <div className={styles.resultSummary}>
-          {selectedImage && <img src={selectedImage} alt="当前选中的结果缩略图" />}
-          <dl>
-            <div><dt>生成时间</dt><dd>{formatTaskTime(task.createdAt)}</dd></div>
-            <div><dt>类型</dt><dd>{imageTypeLabels[task.imageType]}</dd></div>
-            <div><dt>模型</dt><dd>{task.model} · {modelCode}</dd></div>
-            <div><dt>尺寸</dt><dd>{task.aspectRatio}</dd></div>
-            <div><dt>生成数量</dt><dd>{task.resultImages.length || "生成中"}张</dd></div>
-          </dl>
-        </div>
-
         <footer className={styles.resultActions}>
-          <button type="button" aria-label="重新编辑" onClick={() => onEdit(task)}><PencilLine size={16} />重新编辑</button>
-          <button type="button" aria-label="再次生成" onClick={() => onRegenerate(task)}><RotateCcw size={16} />再次生成</button>
           <button className={styles.downloadButton} type="button" aria-label="全部下载" onClick={() => setNotice("原型阶段暂不生成下载文件")}><Download size={16} />全部下载</button>
         </footer>
 
-        <div className={styles.taskFooterStatus}>
-          <span><i className={styles.runningDot} />正在生成 {isGenerating ? `${completedCount}/${resultCount}` : "0"}<small>{isGenerating ? "预计剩余 00:01:12" : "当前无进行中任务"}</small></span>
-          <span><i className={styles.waitingDot} />排队中 0<small>预计等待 00:00:00</small></span>
-          <span><i className={styles.doneDot} />已完成 {task.resultImages.length}<small>生成于 {formatTaskTime(task.createdAt).slice(5)}</small></span>
-        </div>
       </section>
     </aside>
   );

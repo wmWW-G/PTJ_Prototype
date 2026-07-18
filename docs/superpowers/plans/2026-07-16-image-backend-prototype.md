@@ -1,5 +1,7 @@
 # 批图匠真实生图后端原型 Implementation Plan
 
+> 历史实施计划：2026-07-18 起，Azure GPT-Image-2 已由 OpenRouter `openai/gpt-image-2` 替代；当前运行事实以 `CONTEXT.md` 和代码为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在现有批图匠 React 原型中接入可部署到 Vercel 的 FastAPI 后端，真实调用 Gemini Prompt Planner、Nano Banana 2、Nano Banana Pro 和 Azure GPT-Image-2，并流式展示多图生成进度。

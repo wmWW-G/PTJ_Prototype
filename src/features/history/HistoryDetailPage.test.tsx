@@ -11,6 +11,6 @@ describe("HistoryDetailPage", () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole("heading", { name: "没有找到这条生成记录" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "返回批量文生图" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "返回批量生图" })).toBeInTheDocument();
   });
 });

@@ -75,7 +75,7 @@ async def test_non_retryable_error_fails_immediately() -> None:
 
 @pytest.mark.asyncio
 async def test_limiter_prefers_provider_retry_after(monkeypatch) -> None:
-    """Azure 指定的等待时间必须覆盖过短的本地重试延迟。"""
+    """OpenRouter 指定的等待时间必须覆盖过短的本地重试延迟。"""
 
     sleeps: list[float] = []
 

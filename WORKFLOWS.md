@@ -1,16 +1,17 @@
-# 批图匠 Coze 工作流登记册
+# 批图匠 Coze / Dify 工作流登记册
 
-本文档用于统一记录批图匠项目里已经创建好的 Coze 工作流，当前重点是“生成生图 Prompt”的工作流。
+本文档用于统一记录批图匠项目里已经创建好的 Coze 和 Dify 工作流，当前重点是“生成生图 Prompt”和固定生图工作流。
 
 这里的“生成生图 Prompt”不是直接出最终图片，而是根据商品、卖点或图片生成需求，输出可交给图片生成模型使用的正向 Prompt、负面 Prompt、图片角色、可见文案、画面策略等结构化内容。
 
-本文档方便后续把工作流同步给开发同事，也方便自己在 Coze 或 ChatGPT 网页端继续维护、测试、复用和排查。
+本文档方便后续把工作流同步给开发同事，也方便自己在 Coze、Dify 或 ChatGPT 网页端继续维护、测试、复用和排查。
 
 ## 维护规则
 
-- 所有项目相关 Coze 工作流都集中登记在本文档。
+- 所有项目相关 Coze 和 Dify 工作流都集中登记在本文档。
 - 当前优先登记已经创建好的生图 Prompt 生成工作流；未连线的节点素材只作为参考，不等于可运行工作流。
 - Coze Bearer Token、API Key 等敏感信息不写明文，只记录环境变量名，例如 `${COZE_API_TOKEN}`。
+- Dify Service API Key 同样不写入项目文件；本机开发凭据优先保存在系统钥匙串，部署凭据放在后端环境变量或部署平台的 Secret 中。
 - 调用示例必须使用环境变量占位，不能硬编码真实凭证。
 - Input Schema 记录实际入参字段、类型、是否必填、示例值和说明。
 - Output Schema 以实际调用结果为准；未实测前必须标记为“待确认”，不要凭空猜测。
@@ -29,6 +30,7 @@
 | WF-004 | 图生图 / 套图 | `ptj_PicToPic_Set` | `7656403827810025510` | 已实测，返回 `image_input` Prompt 结构 | 2026-06-29 |
 | WF-005 | 文生图 / 海报 | `ptj_TextToPic_Poster` | `7656641215886852146` | 已实测，返回海报 Prompt 结构 | 2026-06-29 |
 | WF-006 | 图生图 / 海报 | `ptj_PicToPic_Poster` | `7656654649588727871` | 已实测，返回 `image_input` Poster Prompt 结构 | 2026-06-29 |
+| WF-007 | 文生图 / 图生图固定执行 | `生图固定工作流`（Dify） | 最新发布版接口不需要传 `workflow_id`；应用 ID `07afb65a-1d26-45d1-b312-5b1e91d37d40` | 凭据与 Input Schema 已只读验证；待接入原型，Output Schema 待实测 | 2026-07-17 |
 
 ## WF-001 `ptj_TextToPicture_Set`
 
@@ -532,3 +534,94 @@ curl -X POST 'https://api.coze.cn/v1/workflow/stream_run' \
 |---|---|---|
 | 2026-06-29 | 按截图命名规则更新为 `ptj_PicToPic_Poster`。 | 用户补充 Coze 工作流名称截图，需要让登记册名称和 Coze 后台一致。 |
 | 2026-06-29 | 新增 WF-006 登记和单图加文本实测记录。 | 用户提供已创建工作流调用，需要保存和测试。 |
+
+## WF-007 `生图固定工作流`（Dify）
+
+### 基础信息
+
+- 页面/功能：批量文生图 / 批量图生图的固定生图执行。
+- 平台：Dify Cloud。
+- 应用模式：`workflow`。
+- 应用名称：`生图固定工作流`。
+- Dify API Base URL：`https://api.dify.ai/v1`。
+- 执行接口：`POST /workflows/run`。
+- 请求方式：`POST`。
+- Dify 控制台应用 ID：`07afb65a-1d26-45d1-b312-5b1e91d37d40`。
+- 版本 `workflow_id`：待从 Dify 版本历史中确认；控制台应用 ID 不是版本 `workflow_id`。
+- 鉴权变量：`${DIFY_FIXED_IMAGE_API_KEY}`。
+- 本机凭据位置：macOS 钥匙串，服务名 `PTJ_DIFY_FIXED_IMAGE_API_KEY`，账户名为上述应用 ID。
+- 请求头：`Authorization: Bearer ${DIFY_FIXED_IMAGE_API_KEY}`、`Content-Type: application/json`。
+- 状态：API Key 已通过 `/info` 与 `/parameters` 只读接口验证；尚未在本项目中接入执行链，也未发起收费生图调用。
+
+### Input Schema
+
+当前状态：已于 2026-07-17 通过 `GET /parameters` 读取确认。
+
+| `inputs` 字段 | Dify 表单类型 | 是否必填 | 说明 |
+|---|---|---|---|
+| `image_model` | `text-input` | 是 | 图片模型标识；当前接口没有返回枚举值，接入前需按工作流画布确认允许值。 |
+| `resolution` | `text-input` | 是 | 输出分辨率；当前接口没有返回枚举值。 |
+| `aspect_ratio` | `text-input` | 是 | 输出图片比例。 |
+| `language` | `text-input` | 否 | 输出语言。 |
+| `refer_image` | `file-list` | 否 | 参考图片列表。 |
+| `has_reference_image` | `checkbox` | 是 | 是否存在参考图片。 |
+| `image_type` | `text-input` | 否 | 图片业务类型。 |
+| `user_input` | `text-input` | 否 | 用户的商品、卖点或画面要求。 |
+| `product_image` | `file-list` | 否 | 商品图片列表。 |
+| `template` | `text-input` | 否 | 固定工作流使用的模板标识或模板内容。 |
+
+补充说明：
+
+- `refer_image` 与 `product_image` 都是 `inputs` 内的文件列表变量，不应误放到请求体顶层的通用 `files` 字段。
+- 文件可使用 `remote_url`，或先通过 `POST /files/upload` 上传后使用 `local_file` 与 `upload_file_id`。
+- Dify 当前返回的应用级文件上传开关为关闭，但上述两个工作流变量本身仍被声明为 `file-list`；实际上传与运行兼容性要在接入时分别验证。
+
+### Output Schema
+
+当前状态：待确认。
+
+- 目前只进行了 `/info` 和 `/parameters` 的无费用只读验证，没有执行 `POST /workflows/run`。
+- 后续首次接入时应优先使用 `response_mode: "streaming"`，保存 `workflow_started`、`node_finished`、`workflow_finished` 与错误事件，并以实际 `data.outputs` 补齐本节。
+- 如果输出包含图片文件，应保留 Dify 返回的文件对象或 URL，不要把大体积图片 Base64 当普通文本在节点间传递。
+
+### 调用示例
+
+```bash
+curl -X POST 'https://api.dify.ai/v1/workflows/run' \
+  -H "Authorization: Bearer ${DIFY_FIXED_IMAGE_API_KEY}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "inputs": {
+      "image_model": "<按工作流实际允许值填写>",
+      "resolution": "<按工作流实际允许值填写>",
+      "aspect_ratio": "1:1",
+      "language": "zh-CN",
+      "refer_image": [],
+      "has_reference_image": false,
+      "image_type": "主图",
+      "user_input": "<商品与卖点>",
+      "product_image": [],
+      "template": "<按工作流实际模板填写>"
+    },
+    "response_mode": "streaming",
+    "user": "<业务系统中的稳定用户标识>"
+  }'
+```
+
+### 实测记录
+
+#### 2026-07-17 凭据与参数只读验证
+
+- 是否成功：成功。
+- 验证接口：`GET /info`、`GET /parameters`。
+- 应用信息：名称为“生图固定工作流”，模式为 `workflow`。
+- 参数结果：确认 10 个输入变量，字段名、类型和必填性已登记在 Input Schema。
+- 安全处理：API Key 未写入仓库，保存在 macOS 钥匙串；项目只记录 `${DIFY_FIXED_IMAGE_API_KEY}`。
+- 费用边界：没有调用 `POST /workflows/run`，因此没有触发生图或模型费用。
+- 待办：接入原型后补齐允许值、实际请求结果、流事件和 Output Schema。
+
+### Changelog
+
+| 日期 | 变更内容 | 原因 |
+|---|---|---|
+| 2026-07-17 | 新增 Dify WF-007，记录应用 ID、接口、钥匙串凭据位置和只读验证得到的 Input Schema。 | 用户提供该应用的 Service API Key，并说明后续将应用到当前原型。 |

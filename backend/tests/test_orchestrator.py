@@ -140,7 +140,6 @@ async def test_reference_mode_uses_original_references_for_every_slot() -> None:
 
     provider = FakeProvider()
     request = GenerationRequest(
-        mode="image-to-image",
         image_type="set",
         template_id="product_set_01",
         model="nano_banana_2",
@@ -168,7 +167,6 @@ async def test_text_mode_generates_anchor_before_fan_out() -> None:
 
     provider = FakeProvider()
     request = GenerationRequest(
-        mode="text-to-image",
         image_type="set",
         template_id="product_set_01",
         model="nano_banana_2",
@@ -195,7 +193,6 @@ async def test_supplier_strength_text_mode_does_not_clone_overview_layout() -> N
 
     provider = FakeProvider()
     request = GenerationRequest(
-        mode="text-to-image",
         image_type="set",
         template_id="product_set_01",
         visual_template_id="supplier_strength",

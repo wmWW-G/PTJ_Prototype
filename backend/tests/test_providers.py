@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from backend.domain import BinaryAsset, ImageSpec, ProviderError
-from backend.providers import AzureImageProvider, GoogleImageProvider, ProviderRouter
+from backend.providers import GoogleImageProvider, OpenRouterImageProvider, ProviderRouter
 
 
 class FakeGoogleClient:
@@ -75,30 +75,46 @@ async def test_google_edit_includes_reference_image() -> None:
 
 
 @pytest.mark.asyncio
-async def test_azure_generate_uses_calculated_size_and_quality() -> None:
-    """Azure Adapter 应把产品比例转换为动态像素尺寸，并独立传质量。"""
+async def test_openrouter_generate_uses_images_api_and_supported_parameters() -> None:
+    """OpenRouter Adapter 只发送 GPT-Image-2 当前端点声明支持的字段。"""
 
     async def handler(request: httpx.Request) -> httpx.Response:
         payload = __import__("json").loads(request.content)
-        assert payload["size"].count("x") == 1
+        assert str(request.url) == "https://openrouter.ai/api/v1/images"
+        assert request.headers["authorization"] == "Bearer test-key"
+        assert request.headers["http-referer"] == "https://example.com/product"
+        assert request.headers["x-title"] == "PTJ Prototype Test"
         assert payload["quality"] == "high"
-        assert payload["model"] == "gpt-image-2"
+        assert payload["model"] == "openai/gpt-image-2"
+        assert payload["n"] == 1
+        assert "16:9" in payload["prompt"]
+        assert "2K" in payload["prompt"]
+        assert "size" not in payload
+        assert "resolution" not in payload
+        assert "aspect_ratio" not in payload
         return httpx.Response(
             200,
-            json={"data": [{"b64_json": base64.b64encode(b"azure-image").decode()}]},
+            json={
+                "data": [
+                    {
+                        "b64_json": base64.b64encode(b"openrouter-image").decode(),
+                        "media_type": "image/webp",
+                    }
+                ]
+            },
         )
 
     http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    provider = AzureImageProvider(
-        endpoint="https://example.openai.azure.com",
+    provider = OpenRouterImageProvider(
         api_key="test-key",
-        deployment="gpt-image-2",
+        site_url="https://example.com/product",
+        app_name="PTJ Prototype Test",
         http_client=http_client,
     )
     result = await provider.generate(
         "商品主图",
         ImageSpec(
-            model="gpt_image_2_azure",
+            model="gpt_image_2_openrouter",
             aspect_ratio="16:9",
             resolution="2K",
             quality="high",
@@ -106,52 +122,43 @@ async def test_azure_generate_uses_calculated_size_and_quality() -> None:
     )
 
     await http_client.aclose()
-    assert result.data == b"azure-image"
+    assert result.data == b"openrouter-image"
+    assert result.mime_type == "image/webp"
 
 
 @pytest.mark.asyncio
-async def test_azure_generate_normalizes_foundry_project_endpoint() -> None:
-    """Foundry 项目 URL 必须转换成 GPT-Image API 要求的资源 Endpoint。
-
-    用户从 Foundry 项目页复制的 URL 会带有 ``services.ai.azure.com/api/projects``；
-    图片 API 则要求同一资源的 ``openai.azure.com`` 主机。若直接拼接，Azure
-    会在真正生成前返回 HTTP 400。
-    """
+async def test_openrouter_generate_maps_resolution_to_quality_when_unspecified() -> None:
+    """调用方不传质量时，应把统一清晰度档位映射为 OpenRouter quality。"""
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        assert str(request.url).startswith(
-            "https://demo-resource.openai.azure.com/openai/v1/images/generations"
-        )
+        payload = __import__("json").loads(request.content)
+        assert payload["quality"] == "low"
         return httpx.Response(
             200,
-            json={"data": [{"b64_json": base64.b64encode(b"azure-image").decode()}]},
+            json={"data": [{"b64_json": base64.b64encode(b"image").decode()}]},
         )
 
     http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    provider = AzureImageProvider(
-        endpoint="https://demo-resource.services.ai.azure.com/api/projects/demo-project",
+    provider = OpenRouterImageProvider(
         api_key="test-key",
-        deployment="gpt-image-2",
         http_client=http_client,
     )
-
     result = await provider.generate(
         "商品主图",
         ImageSpec(
-            model="gpt_image_2_azure",
+            model="gpt_image_2_openrouter",
             aspect_ratio="1:1",
             resolution="1K",
-            quality="low",
         ),
     )
 
     await http_client.aclose()
-    assert result.data == b"azure-image"
+    assert result.data == b"image"
 
 
 @pytest.mark.asyncio
-async def test_azure_error_exposes_safe_code_and_message() -> None:
-    """Azure 失败时应保留脱敏错误详情，不能只显示没有信息量的 HTTP 400。"""
+async def test_openrouter_error_exposes_safe_code_and_message() -> None:
+    """OpenRouter 失败时保留脱敏诊断，不能包含 Authorization Key。"""
 
     async def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -166,10 +173,8 @@ async def test_azure_error_exposes_safe_code_and_message() -> None:
         )
 
     http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    provider = AzureImageProvider(
-        endpoint="https://example.openai.azure.com",
+    provider = OpenRouterImageProvider(
         api_key="test-key",
-        deployment="gpt-image-2",
         http_client=http_client,
     )
 
@@ -177,7 +182,7 @@ async def test_azure_error_exposes_safe_code_and_message() -> None:
         await provider.generate(
             "商品主图",
             ImageSpec(
-                model="gpt_image_2_azure",
+                model="gpt_image_2_openrouter",
                 aspect_ratio="1:1",
                 resolution="1K",
                 quality="low",
@@ -189,24 +194,23 @@ async def test_azure_error_exposes_safe_code_and_message() -> None:
     assert "invalid_request_error" in message
     assert "endpoint or deployment is invalid" in message
     assert "request-123" in message
+    assert "test-key" not in message
 
 
 @pytest.mark.asyncio
-async def test_azure_429_exposes_retry_after_milliseconds() -> None:
-    """Azure 429 的 retry-after-ms 必须转换为秒并交给限流器。"""
+async def test_openrouter_429_exposes_retry_after_seconds() -> None:
+    """OpenRouter 429 的 Retry-After 秒数必须交给限流器。"""
 
     async def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             429,
-            headers={"retry-after-ms": "2500"},
+            headers={"retry-after": "2.5"},
             json={"error": {"code": "rate_limit_exceeded", "message": "slow down"}},
         )
 
     http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    provider = AzureImageProvider(
-        endpoint="https://example.openai.azure.com",
+    provider = OpenRouterImageProvider(
         api_key="test-key",
-        deployment="gpt-image-2",
         http_client=http_client,
     )
 
@@ -214,7 +218,7 @@ async def test_azure_429_exposes_retry_after_milliseconds() -> None:
         await provider.generate(
             "商品主图",
             ImageSpec(
-                model="gpt_image_2_azure",
+                model="gpt_image_2_openrouter",
                 aspect_ratio="1:1",
                 resolution="1K",
                 quality="low",
@@ -227,32 +231,31 @@ async def test_azure_429_exposes_retry_after_milliseconds() -> None:
 
 
 @pytest.mark.asyncio
-async def test_azure_edit_uses_v1_endpoint_and_model_form_field() -> None:
-    """Azure 编辑必须与已验证的生成调用统一使用 v1 图片接口。
-
-    这条测试专门防止编辑调用退回 deployment 旧式 URL：旧 URL 与错误的
-    ``2025-04-01`` 版本组合会导致第一张生成成功、后续编辑全部返回 404。
-    """
+async def test_openrouter_edit_uses_json_data_url_references() -> None:
+    """OpenRouter 图生图必须通过同一 Images API 的 input_references 传图。"""
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        assert str(request.url) == (
-            "https://example.openai.azure.com/openai/v1/images/edits?api-version=preview"
+        assert str(request.url) == "https://openrouter.ai/api/v1/images"
+        assert request.headers["content-type"].startswith("application/json")
+        payload = __import__("json").loads(request.content)
+        assert payload["model"] == "openai/gpt-image-2"
+        references = payload["input_references"]
+        assert len(references) == 1
+        assert references[0]["type"] == "image_url"
+        assert references[0]["image_url"]["url"].startswith("data:image/png;base64,")
+        assert references[0]["image_url"]["url"].endswith(
+            base64.b64encode(b"reference").decode()
         )
-        assert request.headers["content-type"].startswith("multipart/form-data;")
-        body = request.content
-        assert b'name="model"' in body
-        assert b"gpt-image-2" in body
-        assert b'name="image"; filename="anchor.png"' in body
         return httpx.Response(
             200,
-            json={"data": [{"b64_json": base64.b64encode(b"azure-edited").decode()}]},
+            json={
+                "data": [{"b64_json": base64.b64encode(b"openrouter-edited").decode()}]
+            },
         )
 
     http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    provider = AzureImageProvider(
-        endpoint="https://example.openai.azure.com",
+    provider = OpenRouterImageProvider(
         api_key="test-key",
-        deployment="gpt-image-2",
         http_client=http_client,
     )
 
@@ -260,7 +263,7 @@ async def test_azure_edit_uses_v1_endpoint_and_model_form_field() -> None:
         "保持商品一致并更换场景",
         [BinaryAsset(data=b"reference", mime_type="image/png", name="anchor.png")],
         ImageSpec(
-            model="gpt_image_2_azure",
+            model="gpt_image_2_openrouter",
             aspect_ratio="1:1",
             resolution="2K",
             quality="medium",
@@ -268,7 +271,7 @@ async def test_azure_edit_uses_v1_endpoint_and_model_form_field() -> None:
     )
 
     await http_client.aclose()
-    assert result.data == b"azure-edited"
+    assert result.data == b"openrouter-edited"
 
 
 def test_provider_router_returns_registered_model() -> None:
@@ -277,3 +280,21 @@ def test_provider_router_returns_registered_model() -> None:
     google = GoogleImageProvider(FakeGoogleClient())
     router = ProviderRouter({"nano_banana_2": google})
     assert router.get("nano_banana_2") is google
+
+
+def test_openrouter_extracts_actual_png_dimensions() -> None:
+    """OpenRouter 没有单独返回尺寸时，结果卡仍应显示 PNG 的真实宽高。"""
+
+    # PNG 签名后依次是 IHDR 长度、IHDR 类型，再是大端宽高。
+    png_header = (
+        b"\x89PNG\r\n\x1a\n"
+        + b"\x00\x00\x00\rIHDR"
+        + (1254).to_bytes(4, "big")
+        + (1254).to_bytes(4, "big")
+    )
+    result = OpenRouterImageProvider._extract_image(
+        {"data": [{"b64_json": base64.b64encode(png_header).decode()}]}
+    )
+
+    assert result.actual_width == 1254
+    assert result.actual_height == 1254

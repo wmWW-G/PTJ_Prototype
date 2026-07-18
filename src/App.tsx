@@ -6,22 +6,21 @@ import { AppShell } from "./layout/AppShell";
 /**
  * 批图匠原型的路由入口。
  *
- * @returns 包含四个生成页面和历史详情页的完整应用。
+ * @returns 包含统一生图、AI 修图、模特换装和历史详情页的完整应用。
  */
 export function App() {
   return (
     <HashRouter>
       <Routes>
         <Route element={<AppShell />}>
-          <Route index element={<Navigate replace to="/text-to-image" />} />
+          <Route index element={<Navigate replace to="/generation" />} />
           <Route
-            path="/text-to-image"
-            element={<GenerationPage mode="text-to-image" />}
+            path="/generation"
+            element={<GenerationPage mode="generate" />}
           />
-          <Route
-            path="/image-to-image"
-            element={<GenerationPage mode="image-to-image" />}
-          />
+          {/* 保留旧地址跳转，避免收藏夹和历史链接在入口合并后失效。 */}
+          <Route path="/text-to-image" element={<Navigate replace to="/generation" />} />
+          <Route path="/image-to-image" element={<Navigate replace to="/generation" />} />
           <Route
             path="/ai-retouch"
             element={<GenerationPage mode="ai-retouch" />}
@@ -31,7 +30,7 @@ export function App() {
             element={<GenerationPage mode="outfit-swap" />}
           />
           <Route path="/history/:id" element={<HistoryDetailPage />} />
-          <Route path="*" element={<Navigate replace to="/text-to-image" />} />
+          <Route path="*" element={<Navigate replace to="/generation" />} />
         </Route>
       </Routes>
     </HashRouter>

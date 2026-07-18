@@ -9,7 +9,7 @@ export function TopBar() {
     <header className={styles.topbar}>
       <BrandMark />
       <nav className={styles.topnav} aria-label="顶部导航">
-        <Link to="/text-to-image"><Home size={17} />首页</Link>
+        <Link to="/generation"><Home size={17} />首页</Link>
         <button type="button"><BookOpen size={17} />使用教程</button>
         <button type="button"><CreditCard size={17} />充值中心</button>
       </nav>

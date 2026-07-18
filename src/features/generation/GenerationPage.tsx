@@ -9,7 +9,11 @@ import {
   streamGeneration,
   uploadReference,
 } from "./api";
-import { GENERATION_CONFIG, IMAGE_TYPE_RESULT_COUNTS } from "./config";
+import {
+  GENERATION_CONFIG,
+  IMAGE_TYPE_RESULT_COUNTS,
+  type GenerationPageMode,
+} from "./config";
 import { GenerationResultsPanel } from "./components/GenerationResultsPanel";
 import { LiveResultsPanel } from "./components/LiveResultsPanel";
 import {
@@ -17,6 +21,7 @@ import {
   ModelControls,
   type ModelControlValue,
 } from "./components/ModelControls";
+import { PromptImageComposer } from "./components/PromptImageComposer";
 import { UploadZone } from "./components/UploadZone";
 import {
   DEFAULT_VISUAL_TEMPLATES,
@@ -115,20 +120,40 @@ function flattenLiveImages(state: LiveGenerationState): GenerationTask["liveImag
 
 /** 判断历史任务中的模型名是否为当前真实模型。 */
 function isLiveModel(model?: string): model is LiveImageModel {
-  return ["nano_banana_2", "nano_banana_pro", "gpt_image_2_azure"].includes(
+  return ["nano_banana_2", "nano_banana_pro", "gpt_image_2_openrouter"].includes(
     model ?? "",
   );
 }
 
+/**
+ * 判断持久化任务是否属于当前页面入口。
+ *
+ * 统一生图入口会同时展示历史文生图和图生图任务；另外两个 Mock 页面仍只
+ * 展示自己的业务任务。
+ *
+ * @param task 已保存的历史任务。
+ * @param pageMode 当前页面入口。
+ * @returns 该任务是否应出现在当前页面。
+ */
+function taskBelongsToPage(
+  task: GenerationTask,
+  pageMode: GenerationPageMode,
+): boolean {
+  if (pageMode === "generate") {
+    return task.mode === "text-to-image" || task.mode === "image-to-image";
+  }
+  return task.mode === pageMode;
+}
+
 interface GenerationPageProps {
-  mode: GenerationMode;
+  mode: GenerationPageMode;
 }
 
 /**
  * 批图匠统一生成工作区。
  *
- * 文生图和图生图走 FastAPI + NDJSON 真实接口；AI 修图和模特换装继续保留
- * 本地 Mock，确保轻量展示原型的其他页面不被未接入能力阻断。
+ * 统一生图入口走 FastAPI + NDJSON 真实接口；是否存在参考图由后端自动
+ * 归一为文生图或图生图。AI 修图和模特换装继续保留本地 Mock。
  *
  * @param props.mode 当前业务模式。
  * @returns 当前模式的表单、实时结果或 Mock 历史结果。
@@ -138,13 +163,13 @@ export function GenerationPage({ mode }: GenerationPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const editingTask = (location.state as { task?: GenerationTask } | null)?.task;
-  const isLiveMode = mode === "text-to-image" || mode === "image-to-image";
+  const isLiveMode = mode === "generate";
   const [imageType, setImageType] = useState<ImageType>(editingTask?.imageType ?? "set");
   const [retouchMode, setRetouchMode] = useState<RetouchMode>(editingTask?.retouchMode ?? "watermark");
   const [prompt, setPrompt] = useState(editingTask?.prompt ?? "");
   const [quantity, setQuantity] = useState(editingTask?.variantCount ?? editingTask?.quantity ?? 1);
   const [modelValue, setModelValue] = useState<ModelControlValue>({
-    model: isLiveModel(editingTask?.model) ? editingTask.model : "nano_banana_2",
+    model: isLiveModel(editingTask?.model) ? editingTask.model : "gpt_image_2_openrouter",
     aspectRatio: editingTask?.aspectRatio ?? "1:1",
     resolution: editingTask?.resolution ?? "2K",
     quality: editingTask?.quality ?? "medium",
@@ -164,18 +189,20 @@ export function GenerationPage({ mode }: GenerationPageProps) {
     editingTask?.supplementalInfo ?? {},
   );
   const [tasks, setTasks] = useState<GenerationTask[]>(() =>
-    listTasks().filter((task) => task.mode === mode),
+    listTasks().filter((task) => taskBelongsToPage(task, mode)),
   );
   const generationAbortRef = useRef<AbortController | null>(null);
   const hasInlineResults = isLiveMode;
   const templateId = templateIds[imageType];
+  const activeGenerationMode: Extract<GenerationMode, "text-to-image" | "image-to-image"> =
+    sourceFiles.length > 0 ? "image-to-image" : "text-to-image";
   const slotCount =
     capabilities?.templates[templateId]?.slot_count ?? IMAGE_TYPE_RESULT_COUNTS[imageType];
   const plannedOutputCount = slotCount * quantity;
 
   /** 模式变化时重读历史，避免 React Router 复用组件后显示旧页面任务。 */
   useEffect(() => {
-    setTasks(listTasks().filter((task) => task.mode === mode));
+    setTasks(listTasks().filter((task) => taskBelongsToPage(task, mode)));
     setLiveState(createInitialLiveState());
     setLiveError("");
   }, [mode]);
@@ -203,42 +230,12 @@ export function GenerationPage({ mode }: GenerationPageProps) {
 
   /** 从 LocalStorage 重新读取当前模式任务。 */
   function refreshTasks() {
-    setTasks(listTasks().filter((task) => task.mode === mode));
-  }
-
-  /** 把历史任务参数回填到左侧表单。 */
-  function editTask(task: GenerationTask) {
-    setImageType(task.imageType);
-    setRetouchMode(task.retouchMode ?? "watermark");
-    setPrompt(task.prompt);
-    setQuantity(task.variantCount ?? task.quantity);
-    setModelValue({
-      model: isLiveModel(task.model) ? task.model : "nano_banana_2",
-      aspectRatio: task.aspectRatio,
-      resolution: task.resolution,
-      quality: task.quality,
-    });
-    setSourceImages(task.sourceImages);
-    setGarmentImages(task.garmentImages);
-    setModelImages(task.modelImages);
-    setVisualTemplateId(task.visualTemplateId ?? "standard_product");
-    setSupplementalInfo(task.supplementalInfo ?? {});
-  }
-
-  /** 复用历史参数创建 Mock 任务；真实任务则只回填参数等待用户确认。 */
-  function regenerateTask(task: GenerationTask) {
-    if (task.mode === "text-to-image" || task.mode === "image-to-image") {
-      editTask(task);
-      return;
-    }
-    const next = createMockTask({ ...task, mode: task.mode, prompt: task.prompt });
-    saveTask({ ...next, status: "completed", resultImages: [...task.resultImages] });
-    refreshTasks();
+    setTasks(listTasks().filter((task) => taskBelongsToPage(task, mode)));
   }
 
   /** AI 修图和模特换装继续创建轻量本地 Mock 结果。 */
   function handleMockGenerate() {
-    if (isGenerating) return;
+    if (isGenerating || mode === "generate") return;
     setIsGenerating(true);
     const task = createMockTask({
       mode,
@@ -276,18 +273,15 @@ export function GenerationPage({ mode }: GenerationPageProps) {
    */
   async function handleLiveGenerate(): Promise<void> {
     if (isGenerating) return;
-    if (mode !== "text-to-image" && mode !== "image-to-image") return;
-    // 显式收窄后保存为局部常量，避免 await 之后 TypeScript 丢失联合类型判断。
-    const liveMode = mode;
-    if (liveMode === "image-to-image" && sourceFiles.length === 0) {
-      setLiveError("图生图请先上传至少一张商品参考图");
+    if (mode !== "generate") return;
+    const typedRequirement = prompt.trim();
+    if (!typedRequirement && sourceFiles.length === 0) {
+      setLiveError("请先上传商品参考图，或填写补充文字要求");
       return;
     }
-    const requirement = prompt.trim();
-    if (!requirement) {
-      setLiveError("请先填写商品、卖点或画面要求");
-      return;
-    }
+    // 后端 Planner 需要非空文本。用户只上传图片时，用中性的执行说明补齐，
+    // 不虚构商品卖点，也不强迫用户为了提交而重复描述图片内容。
+    const requirement = typedRequirement || "请以已上传的商品参考图为主体，保留商品真实外观与关键特征，并按所选模板生成电商图片。";
 
     setIsGenerating(true);
     setLiveError("");
@@ -296,7 +290,8 @@ export function GenerationPage({ mode }: GenerationPageProps) {
     const controller = new AbortController();
     generationAbortRef.current = controller;
     let task = createMockTask({
-      mode,
+      // 任务历史仍保留最终业务模式，便于结果详情说明本次是否使用了参考图。
+      mode: activeGenerationMode,
       imageType,
       prompt: requirement,
       model: modelValue.model,
@@ -315,12 +310,9 @@ export function GenerationPage({ mode }: GenerationPageProps) {
 
     try {
       // 每张参考图单独上传，避免一次 multipart 请求越过 Vercel 4.5 MB 限制。
-      const referenceAssets =
-        liveMode === "image-to-image"
-          ? await Promise.all(
-              sourceFiles.map((file) => uploadReference(file, controller.signal)),
-            )
-          : [];
+      const referenceAssets = await Promise.all(
+        sourceFiles.map((file) => uploadReference(file, controller.signal)),
+      );
       task = {
         ...task,
         sourceImages: referenceAssets.map((asset) => asset.url),
@@ -329,7 +321,6 @@ export function GenerationPage({ mode }: GenerationPageProps) {
 
       await streamGeneration(
         {
-          mode: liveMode,
           image_type: imageType,
           template_id: templateId,
           visual_template_id: visualTemplateId,
@@ -337,7 +328,7 @@ export function GenerationPage({ mode }: GenerationPageProps) {
           aspect_ratio: modelValue.aspectRatio,
           resolution: modelValue.resolution,
           quality:
-            modelValue.model === "gpt_image_2_azure"
+            modelValue.model === "gpt_image_2_openrouter"
               ? modelValue.quality
               : undefined,
           language: "zh-CN",
@@ -401,16 +392,11 @@ export function GenerationPage({ mode }: GenerationPageProps) {
   return (
     <div className={`${styles.page} ${hasInlineResults ? styles.splitPage : ""}`}>
       <div className={styles.formColumn}>
-        <header className={styles.pageHeader}>
-          <h1>{config.title}</h1>
-          {hasInlineResults && (
-            <ol className={styles.workflowSteps} aria-label="生成步骤">
-              <li className={styles.activeStep}><b>1</b><span>输入内容</span></li>
-              <li><b>2</b><span>生成设置</span></li>
-              <li><b>3</b><span>并发生成</span></li>
-            </ol>
-          )}
-        </header>
+        {!isLiveMode && (
+          <header className={styles.pageHeader}>
+            <h1>{config.title}</h1>
+          </header>
+        )}
 
         <section className={styles.workspace}>
           {config.hasImageTypes && (
@@ -451,14 +437,11 @@ export function GenerationPage({ mode }: GenerationPageProps) {
             />
           )}
 
-          {config.uploadLabels.map((label, index) => (
+          {!isLiveMode && config.uploadLabels.map((label, index) => (
             <UploadZone
               key={label}
               label={label}
               onChange={index === 0 ? (mode === "outfit-swap" ? setGarmentImages : setSourceImages) : setModelImages}
-              onFilesChange={index === 0 && mode === "image-to-image" ? setSourceFiles : undefined}
-              acceptedTypes={mode === "image-to-image" ? ["image/jpeg", "image/png", "image/webp"] : undefined}
-              maxFileSize={mode === "image-to-image" ? 4 * 1024 * 1024 : undefined}
             />
           ))}
 
@@ -477,39 +460,53 @@ export function GenerationPage({ mode }: GenerationPageProps) {
             </div>
           )}
 
-          <label className={styles.promptField}>
-            <span className={styles.fieldLabel}>{config.promptLabel}</span>
-            <textarea
+          {isLiveMode ? (
+            <PromptImageComposer
+              label={config.promptLabel}
               value={prompt}
-              maxLength={4000}
               placeholder={config.promptPlaceholder}
-              onChange={(event) => setPrompt(event.target.value)}
+              maxLength={4000}
+              onChange={setPrompt}
+              onImagesChange={(urls, files) => {
+                setSourceImages(urls);
+                setSourceFiles(files);
+              }}
             />
-            <small>{prompt.length}/{isLiveMode ? 4000 : 1000}</small>
-          </label>
+          ) : (
+            <label className={styles.promptField}>
+              <span className={styles.fieldLabel}>{config.promptLabel}</span>
+              <textarea
+                value={prompt}
+                maxLength={1000}
+                placeholder={config.promptPlaceholder}
+                onChange={(event) => setPrompt(event.target.value)}
+              />
+              <small>{prompt.length}/1000</small>
+            </label>
+          )}
 
-          <div className={styles.quantityRow}>
-            <div className={styles.controlBlock}>
-              <span className={styles.fieldLabel}>{isLiveMode ? "完整方案数量" : "每张图片 AI 生成数量"}</span>
-              <div className={styles.stepper}>
-                <button type="button" aria-label="减少数值" onClick={() => setQuantity(Math.max(1, quantity - 1))}><Minus size={16} /></button>
-                <strong>{quantity}</strong>
-                <button type="button" aria-label="增加数值" onClick={() => setQuantity(Math.min(4, quantity + 1))}><Plus size={16} /></button>
+          {!isLiveMode && (
+            <div className={styles.quantityRow}>
+              <div className={styles.controlBlock}>
+                <span className={styles.fieldLabel}>每张图片 AI 生成数量</span>
+                <div className={styles.stepper}>
+                  <button type="button" aria-label="减少数值" onClick={() => setQuantity(Math.max(1, quantity - 1))}><Minus size={16} /></button>
+                  <strong>{quantity}</strong>
+                  <button type="button" aria-label="增加数值" onClick={() => setQuantity(Math.min(4, quantity + 1))}><Plus size={16} /></button>
+                </div>
               </div>
             </div>
-            {isLiveMode && (
-              <div className={styles.outputMath}>
-                <span>每版 {slotCount} 张</span>
-                <strong>{quantity} 版 × {slotCount} 张 = {plannedOutputCount} 张</strong>
-              </div>
-            )}
-          </div>
+          )}
 
           {isLiveMode ? (
             <ModelControls
               value={modelValue}
               onChange={setModelValue}
               capabilities={capabilities?.models ?? DEFAULT_MODEL_CAPABILITIES}
+              variantCount={quantity}
+              imagesPerVariant={slotCount}
+              onVariantCountChange={setQuantity}
+              maxVariantCount={capabilities?.max_variant_count ?? 10}
             />
           ) : (
             <>
@@ -528,11 +525,7 @@ export function GenerationPage({ mode }: GenerationPageProps) {
             </>
           )}
 
-          <details className={styles.optionalPanel}>
-            <summary>批量加文字 / LOGO（选填）<ChevronDown size={16} /></summary>
-            <div><input aria-label="Logo 文字" placeholder="LOGO 位置 + LOGO 名称" /><UploadZone label="上传 LOGO" /></div>
-          </details>
-          {config.hasBackground && (
+          {config.hasBackground && (!isLiveMode || sourceFiles.length > 0) && (
             <details className={styles.optionalPanel}>
               <summary>批量替换背景（选填）<ChevronDown size={16} /></summary>
               <UploadZone label="上传背景图片" />
@@ -545,7 +538,7 @@ export function GenerationPage({ mode }: GenerationPageProps) {
           </button>
           <p className={styles.creditHint}>
             {isLiveMode
-              ? mode === "image-to-image"
+              ? activeGenerationMode === "image-to-image"
                 ? "原始参考图会被所有槽位复用；图片之间不会串联漂移。"
                 : "无图模式先生成基准图 1，再并发生成同版其余图片。"
               : `预计消耗 ${plannedOutputCount} 张图额度`}
@@ -563,7 +556,7 @@ export function GenerationPage({ mode }: GenerationPageProps) {
 
       {hasInlineResults && (
         liveState.status === "idle" ? (
-          <GenerationResultsPanel mode={mode} tasks={tasks} onEdit={editTask} onRegenerate={regenerateTask} />
+          <GenerationResultsPanel tasks={tasks} />
         ) : (
           <LiveResultsPanel state={liveState} expectedCount={plannedOutputCount} />
         )

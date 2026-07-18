@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .domain import ImageModel
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,9 +22,11 @@ class Settings:
     google_cloud_location: str = "global"
     google_service_account_json: str = ""
     google_prompt_planner_model: str = "gemini-3.5-flash"
-    azure_openai_endpoint: str = ""
-    azure_openai_api_key: str = ""
-    azure_gpt_image_2_deployment: str = ""
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_gpt_image_2_model: str = "openai/gpt-image-2"
+    openrouter_site_url: str = ""
+    openrouter_app_name: str = "PTJ Prototype"
     blob_read_write_token: str = ""
     blob_allowed_host: str = ""
     allowed_origins: tuple[str, ...] = (
@@ -56,11 +62,20 @@ class Settings:
                 "GOOGLE_PROMPT_PLANNER_MODEL", "gemini-3.5-flash"
             ).strip()
             or "gemini-3.5-flash",
-            azure_openai_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", "").strip().rstrip("/"),
-            azure_openai_api_key=os.getenv("AZURE_OPENAI_API_KEY", "").strip(),
-            azure_gpt_image_2_deployment=os.getenv(
-                "AZURE_GPT_IMAGE_2_DEPLOYMENT", ""
-            ).strip(),
+            openrouter_api_key=os.getenv("OPENROUTER_API_KEY", "").strip(),
+            openrouter_base_url=os.getenv(
+                "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
+            ).strip().rstrip("/")
+            or "https://openrouter.ai/api/v1",
+            openrouter_gpt_image_2_model=os.getenv(
+                "OPENROUTER_GPT_IMAGE_2_MODEL", "openai/gpt-image-2"
+            ).strip()
+            or "openai/gpt-image-2",
+            openrouter_site_url=os.getenv("OPENROUTER_SITE_URL", "").strip(),
+            openrouter_app_name=os.getenv(
+                "OPENROUTER_APP_NAME", "PTJ Prototype"
+            ).strip()
+            or "PTJ Prototype",
             blob_read_write_token=os.getenv("BLOB_READ_WRITE_TOKEN", "").strip(),
             blob_allowed_host=os.getenv("BLOB_ALLOWED_HOST", "").strip().lower(),
             allowed_origins=origins,
@@ -82,12 +97,37 @@ class Settings:
         required = {
             "GOOGLE_CLOUD_PROJECT": self.google_cloud_project,
             "GOOGLE_SERVICE_ACCOUNT_JSON": self.google_service_account_json,
-            "AZURE_OPENAI_ENDPOINT": self.azure_openai_endpoint,
-            "AZURE_OPENAI_API_KEY": self.azure_openai_api_key,
-            "AZURE_GPT_IMAGE_2_DEPLOYMENT": self.azure_gpt_image_2_deployment,
+            "OPENROUTER_API_KEY": self.openrouter_api_key,
             "BLOB_READ_WRITE_TOKEN": self.blob_read_write_token,
             "BLOB_ALLOWED_HOST": self.blob_allowed_host,
         }
+        return [name for name, value in required.items() if not value]
+
+    def missing_for_model(self, model: "ImageModel") -> list[str]:
+        """只检查执行当前模型必需的配置。
+
+        所有任务都使用 Google Prompt Planner 和 Blob 存储；只有 GPT-Image-2
+        额外依赖 OpenRouter Key。这样单个供应商暂未配置时，不会连带阻断其他
+        已配置模型的真实生成。
+
+        Args:
+            model: 当前请求选择的图片模型。
+
+        Returns:
+            当前模型缺少的环境变量名，不包含任何变量值。
+
+        Raises:
+            不主动抛出异常。
+        """
+
+        required = {
+            "GOOGLE_CLOUD_PROJECT": self.google_cloud_project,
+            "GOOGLE_SERVICE_ACCOUNT_JSON": self.google_service_account_json,
+            "BLOB_READ_WRITE_TOKEN": self.blob_read_write_token,
+            "BLOB_ALLOWED_HOST": self.blob_allowed_host,
+        }
+        if model == "gpt_image_2_openrouter":
+            required["OPENROUTER_API_KEY"] = self.openrouter_api_key
         return [name for name, value in required.items() if not value]
 
     def safe_status(self) -> dict[str, object]:
@@ -109,4 +149,5 @@ class Settings:
             "missing": missing,
             "planner_model": self.google_prompt_planner_model,
             "google_location": self.google_cloud_location,
+            "openrouter_image_model": self.openrouter_gpt_image_2_model,
         }

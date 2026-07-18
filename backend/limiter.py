@@ -111,7 +111,7 @@ class AsyncRateLimiter:
             except ProviderError as exc:
                 if not exc.retryable or attempt >= 2:
                     raise
-                # 429 必须优先遵守 Azure 返回的 retry-after-ms；随机错峰可避免
+                # 429 必须优先遵守供应商返回的 Retry-After；随机错峰可避免
                 # 同一批并发请求在同一毫秒再次撞上限流。
                 delay = max(
                     self._retry_delays[attempt],

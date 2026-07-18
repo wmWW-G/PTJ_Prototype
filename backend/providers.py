@@ -1,10 +1,10 @@
-"""Nano Banana 与 Azure GPT-Image-2 的统一图片 Adapter。"""
+"""Nano Banana 与 OpenRouter GPT-Image-2 的统一图片 Adapter。"""
 
 from __future__ import annotations
 
 import base64
+import struct
 from typing import Any, Mapping, Protocol, Sequence
-from urllib.parse import urlsplit
 
 import httpx
 
@@ -16,7 +16,6 @@ from .domain import (
     ProviderError,
     UnsupportedCapabilityError,
 )
-from .sizing import calculate_azure_size
 
 
 GOOGLE_IMAGE_MODELS: dict[str, str] = {
@@ -25,50 +24,47 @@ GOOGLE_IMAGE_MODELS: dict[str, str] = {
 }
 
 
-def _normalize_azure_openai_endpoint(endpoint: str) -> str:
-    """把 Foundry Project Endpoint 转成 GPT-Image 使用的资源 Endpoint。
-
-    Azure Foundry 项目页常给出
-    ``https://RESOURCE.services.ai.azure.com/api/projects/PROJECT``，但 Azure
-    OpenAI 图片接口要求 ``https://RESOURCE.openai.azure.com``。两者属于同一
-    Azure 资源，只是面向的 API 平面不同。已经是 OpenAI 资源地址时保持不变。
+def _png_dimensions(data: bytes) -> tuple[int | None, int | None]:
+    """从 PNG IHDR 头读取实际宽高，不引入额外图片处理依赖。
 
     Args:
-        endpoint: Vercel 环境变量中的 Azure Endpoint。
+        data: 已解码的供应商图片字节。
 
     Returns:
-        去除末尾斜杠、可直接拼接 ``/openai/...`` 的资源 Endpoint。
+        PNG 合法且头部完整时返回 ``(width, height)``；其他格式或损坏数据
+        返回 ``(None, None)``，由结果卡安全隐藏实际尺寸。
 
     Raises:
-        不主动抛出异常；非标准地址保持原样，由 Azure 返回明确错误。
+        不抛出异常；长度与签名会在读取前验证。
     """
 
-    normalized = endpoint.strip().rstrip("/")
-    parsed = urlsplit(normalized)
-    hostname = parsed.hostname or ""
-    foundry_suffix = ".services.ai.azure.com"
-    if hostname.endswith(foundry_suffix):
-        resource_name = hostname.removesuffix(foundry_suffix)
-        if resource_name:
-            return f"{parsed.scheme or 'https'}://{resource_name}.openai.azure.com"
-    return normalized
+    png_signature = b"\x89PNG\r\n\x1a\n"
+    if len(data) < 24 or not data.startswith(png_signature):
+        return None, None
+    try:
+        width, height = struct.unpack(">II", data[16:24])
+    except struct.error:
+        return None, None
+    if width <= 0 or height <= 0:
+        return None, None
+    return width, height
 
 
-def _azure_error_message(response: httpx.Response) -> str:
-    """从 Azure 错误响应中提取不含凭证的诊断信息。
+def _openrouter_error_message(response: httpx.Response) -> str:
+    """从 OpenRouter 错误响应中提取不含凭证的诊断信息。
 
     Args:
-        response: Azure 返回的非 2xx 响应。
+        response: OpenRouter 返回的非 2xx 响应。
 
     Returns:
-        HTTP 状态、Azure 错误码、简短消息和请求 ID。不会包含请求 Header、
+        HTTP 状态、上游错误码、简短消息和请求 ID。不会包含请求 Header、
         API Key、完整请求体或用户图片。
 
     Raises:
         不抛出异常；错误响应不是 JSON 时仅返回状态码和请求 ID。
     """
 
-    parts = [f"Azure OpenAI 返回 HTTP {response.status_code}"]
+    parts = [f"OpenRouter 返回 HTTP {response.status_code}"]
     try:
         payload = response.json()
     except ValueError:
@@ -91,11 +87,11 @@ def _azure_error_message(response: httpx.Response) -> str:
     return " · ".join(parts)
 
 
-def _azure_retry_after_seconds(response: httpx.Response) -> float | None:
-    """读取 Azure 429 响应建议的退避时间。
+def _openrouter_retry_after_seconds(response: httpx.Response) -> float | None:
+    """读取 OpenRouter 429 响应建议的退避时间。
 
     Args:
-        response: Azure 返回的 HTTP 响应。
+        response: OpenRouter 返回的 HTTP 响应。
 
     Returns:
         建议等待秒数；响应没有合法提示时返回 ``None``。
@@ -104,10 +100,7 @@ def _azure_retry_after_seconds(response: httpx.Response) -> float | None:
         不抛出异常；异常 Header 会被安全忽略。
     """
 
-    candidates = (
-        (response.headers.get("retry-after-ms"), 0.001),
-        (response.headers.get("retry-after"), 1.0),
-    )
+    candidates = ((response.headers.get("retry-after"), 1.0),)
     for raw_value, scale in candidates:
         if raw_value is None:
             continue
@@ -279,23 +272,33 @@ class GoogleImageProvider:
         return _extract_google_image(await self._client.generate_content(model_id, payload))
 
 
-class AzureImageProvider:
-    """Azure GPT-Image-2 文生图与编辑 Adapter。"""
+class OpenRouterImageProvider:
+    """OpenRouter GPT-Image-2 文生图与图生图 Adapter。
+
+    OpenRouter 的专用 Images API 使用同一个 ``/images`` 端点：纯文生图只发
+    ``prompt``，图生图额外发送 ``input_references``。当前 GPT-Image-2 能力
+    端点没有声明 ``size`` 或 ``aspect_ratio``，因此比例与细节档位会作为
+    Prompt 约束；质量只通过官方支持的 ``quality`` 字段传递。
+    """
 
     def __init__(
         self,
         *,
-        endpoint: str,
         api_key: str,
-        deployment: str,
+        model: str = "openai/gpt-image-2",
+        base_url: str = "https://openrouter.ai/api/v1",
+        site_url: str = "",
+        app_name: str = "PTJ Prototype",
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        """保存 Azure 连接配置。
+        """保存 OpenRouter 连接配置。
 
         Args:
-            endpoint: Azure OpenAI 资源 Endpoint。
-            api_key: 仅位于服务端环境变量中的访问密钥。
-            deployment: GPT-Image-2 部署名称。
+            api_key: 仅位于服务端环境变量中的 OpenRouter Key。
+            model: OpenRouter 模型 ID，默认固定为 ``openai/gpt-image-2``。
+            base_url: OpenRouter API 根地址，便于测试或企业代理覆盖。
+            site_url: 可选的来源站点，用于 OpenRouter 应用归因。
+            app_name: 可选的应用名称，用于 OpenRouter 应用归因。
             http_client: 可选 HTTPX 客户端，用于测试注入。
 
         Returns:
@@ -305,42 +308,35 @@ class AzureImageProvider:
             不主动抛出异常。
         """
 
-        self._endpoint = _normalize_azure_openai_endpoint(endpoint)
         self._api_key = api_key
-        self._deployment = deployment
-        self._http_client = http_client or httpx.AsyncClient(timeout=240)
+        self._model = model
+        self._base_url = base_url.strip().rstrip("/")
+        self._site_url = site_url.strip()
+        self._app_name = app_name.strip()
+        # 服务端请求不继承开发机的 HTTP(S)_PROXY。这样既避免误把图片和 Key
+        # 交给未知代理，也不会因本机 SOCKS 环境缺少可选 socksio 依赖而无法启动。
+        self._http_client = http_client or httpx.AsyncClient(
+            timeout=240,
+            trust_env=False,
+        )
         self._owns_client = http_client is None
 
     async def generate(self, prompt: str, spec: ImageSpec) -> GeneratedBinary:
-        """调用 Azure GPT-Image-2 文生图。
+        """通过 OpenRouter 调用 GPT-Image-2 文生图。
 
         Args:
             prompt: 当前图片 Prompt。
             spec: 比例、清晰度和质量参数。
 
         Returns:
-            解码后的图片及实际像素尺寸。
+            解码后的图片。
 
         Raises:
             ProviderError: 上游请求或返回解析失败时抛出。
-            UnsupportedCapabilityError: 动态尺寸无法满足 Azure 约束时抛出。
         """
 
-        size = calculate_azure_size(spec.aspect_ratio, spec.resolution)
-        response = await self._request(
-            "POST",
-            f"{self._endpoint}/openai/v1/images/generations?api-version=preview",
-            json={
-                "model": self._deployment,
-                "prompt": prompt,
-                "size": size.api_value,
-                "quality": spec.quality or "medium",
-                "n": 1,
-                "output_format": "png",
-            },
-        )
-        result = self._extract_azure_image(response)
-        return result.model_copy(update={"actual_width": size.width, "actual_height": size.height})
+        response = await self._request(self._payload(prompt=prompt, spec=spec))
+        return self._extract_image(response)
 
     async def edit(
         self,
@@ -348,7 +344,7 @@ class AzureImageProvider:
         references: Sequence[BinaryAsset],
         spec: ImageSpec,
     ) -> GeneratedBinary:
-        """调用 Azure 部署级图片编辑接口。
+        """通过 OpenRouter 的 ``input_references`` 调用 GPT-Image-2 图生图。
 
         Args:
             prompt: 当前槽位 Prompt。
@@ -356,7 +352,7 @@ class AzureImageProvider:
             spec: 比例、清晰度和质量参数。
 
         Returns:
-            解码后的编辑图片及实际尺寸。
+            解码后的编辑图片。
 
         Raises:
             UnsupportedCapabilityError: 参考图为空时抛出。
@@ -364,38 +360,60 @@ class AzureImageProvider:
         """
 
         if not references:
-            raise UnsupportedCapabilityError("Azure 图片编辑至少需要一张参考图")
-        size = calculate_azure_size(spec.aspect_ratio, spec.resolution)
-        # v1 编辑接口要求 multipart 字段名为 ``image``；多图通过重复同名字段传递。
-        # 统一使用 v1 路径，可以避免生成与编辑使用不同 API 版本造成 404。
-        files = [
-            ("image", (reference.name, reference.data, reference.mime_type))
+            raise UnsupportedCapabilityError("OpenRouter 图片编辑至少需要一张参考图")
+        payload = self._payload(prompt=prompt, spec=spec)
+        # OpenRouter Images API 接受 HTTP URL 或 Data URL。参考图已在后端下载并
+        # 做过 MIME/大小校验，这里转成 Data URL 可避免再次暴露 Blob 鉴权链路。
+        payload["input_references"] = [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": (
+                        f"data:{reference.mime_type};base64,"
+                        f"{base64.b64encode(reference.data).decode('ascii')}"
+                    )
+                },
+            }
             for reference in references
         ]
-        data = {
-            "model": self._deployment,
-            "prompt": prompt,
-            "size": size.api_value,
-            "quality": spec.quality or "medium",
-            "n": "1",
-            "output_format": "png",
-        }
-        response = await self._request(
-            "POST",
-            f"{self._endpoint}/openai/v1/images/edits?api-version=preview",
-            data=data,
-            files=files,
-        )
-        result = self._extract_azure_image(response)
-        return result.model_copy(update={"actual_width": size.width, "actual_height": size.height})
+        response = await self._request(payload)
+        return self._extract_image(response)
 
-    async def _request(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
-        """发送带 Azure API Key 的请求并统一错误。
+    def _payload(self, *, prompt: str, spec: ImageSpec) -> dict[str, Any]:
+        """组装 OpenRouter Images API 支持的请求字段。
 
         Args:
-            method: HTTP 方法。
-            url: 完整 Azure URL。
-            **kwargs: HTTPX 的 json/data/files 等请求参数。
+            prompt: 当前图片 Prompt。
+            spec: 统一模型规格。
+
+        Returns:
+            不包含 OpenRouter 当前未声明支持的 size、resolution、aspect_ratio。
+
+        Raises:
+            不抛出异常。
+        """
+
+        quality = spec.quality or {"1K": "low", "2K": "medium", "4K": "high"}[
+            spec.resolution
+        ]
+        constrained_prompt = (
+            f"{prompt}\n\n"
+            "Output composition requirements: "
+            f"compose for a {spec.aspect_ratio} canvas; "
+            f"use {spec.resolution} detail intent."
+        )
+        return {
+            "model": self._model,
+            "prompt": constrained_prompt,
+            "quality": quality,
+            "n": 1,
+        }
+
+    async def _request(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """发送带 Bearer Key 的 OpenRouter 图片请求并统一错误。
+
+        Args:
+            payload: 已组装的 Images API JSON 请求体。
 
         Returns:
             上游响应 JSON。
@@ -405,32 +423,41 @@ class AzureImageProvider:
         """
 
         try:
-            response = await self._http_client.request(
-                method,
-                url,
-                headers={"api-key": self._api_key},
-                **kwargs,
+            headers = {
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            }
+            if self._site_url:
+                headers["HTTP-Referer"] = self._site_url
+            # HTTP 标准请求头必须能编码为 ASCII。X-Title 只是可选归因字段，
+            # 自定义中文名时宁可省略，也不能让真实生图请求在本地编码阶段失败。
+            if self._app_name and self._app_name.isascii():
+                headers["X-Title"] = self._app_name
+            response = await self._http_client.post(
+                f"{self._base_url}/images",
+                headers=headers,
+                json=payload,
             )
         except httpx.HTTPError as exc:
-            raise ProviderError("无法连接 Azure OpenAI", retryable=True) from exc
+            raise ProviderError("无法连接 OpenRouter", retryable=True) from exc
         if response.is_error:
             raise ProviderError(
-                _azure_error_message(response),
+                _openrouter_error_message(response),
                 status_code=response.status_code,
                 retryable=response.status_code in {408, 429, 500, 502, 503, 504},
-                retry_after_seconds=_azure_retry_after_seconds(response),
+                retry_after_seconds=_openrouter_retry_after_seconds(response),
             )
         try:
             return response.json()
         except ValueError as exc:
-            raise ProviderError("Azure OpenAI 返回了无效 JSON") from exc
+            raise ProviderError("OpenRouter 返回了无效 JSON") from exc
 
     @staticmethod
-    def _extract_azure_image(response: dict[str, Any]) -> GeneratedBinary:
-        """从 Azure 响应中提取首张 Base64 图片。
+    def _extract_image(response: dict[str, Any]) -> GeneratedBinary:
+        """从 OpenRouter 响应中提取首张 Base64 图片。
 
         Args:
-            response: Azure 图片接口的响应 JSON。
+            response: OpenRouter Images API 的响应 JSON。
 
         Returns:
             解码后的图片。
@@ -441,11 +468,19 @@ class AzureImageProvider:
 
         items = response.get("data", [])
         if not items or not items[0].get("b64_json"):
-            raise ProviderError("Azure GPT-Image-2 没有返回图片")
+            raise ProviderError("OpenRouter GPT-Image-2 没有返回图片")
         try:
-            return GeneratedBinary(data=base64.b64decode(items[0]["b64_json"]))
+            image_data = base64.b64decode(items[0]["b64_json"], validate=True)
+            mime_type = items[0].get("media_type") or "image/png"
+            width, height = _png_dimensions(image_data)
+            return GeneratedBinary(
+                data=image_data,
+                mime_type=mime_type,
+                actual_width=width,
+                actual_height=height,
+            )
         except (ValueError, TypeError) as exc:
-            raise ProviderError("Azure 图片 Base64 无法解码") from exc
+            raise ProviderError("OpenRouter 图片 Base64 无法解码") from exc
 
     async def close(self) -> None:
         """关闭由 Adapter 创建的 HTTP 客户端。
