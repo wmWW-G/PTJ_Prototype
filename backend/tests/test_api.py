@@ -83,14 +83,34 @@ def test_health_lists_missing_configuration_without_values() -> None:
     assert "OPENROUTER_API_KEY" in payload["missing"]
 
 
+def test_cors_allows_vite_when_local_dev_port_changes() -> None:
+    """Vite 从 5173 顺延到 5174 时，浏览器仍应能调用生图接口。
+
+    本地同时运行多个原型时，Vite 会自动选择下一个空闲端口。这个测试锁定
+    真实故障：页面位于 ``127.0.0.1:5174`` 时，预检请求不能被 CORS 拒绝。
+    """
+
+    response = _client().options(
+        "/api/generations/stream",
+        headers={
+            "Origin": "http://127.0.0.1:5174",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5174"
+
+
 def test_capabilities_expose_server_template_counts() -> None:
     """前端预计张数必须来自服务端模板，而非复制一份业务逻辑。"""
 
     payload = _client().get("/api/capabilities").json()
     assert payload["templates"]["product_set_01"]["slot_count"] == 6
-    assert payload["templates"]["listing_01"]["slot_count"] == 5
+    assert payload["templates"]["listing_01"]["slot_count"] == 8
     assert payload["max_variant_count"] == 10
-    assert payload["max_output_images"] == 60
+    assert payload["max_output_images"] == 80
 
 
 def test_generation_request_allows_up_to_ten_variants() -> None:
@@ -110,6 +130,27 @@ def test_generation_request_allows_up_to_ten_variants() -> None:
 
     with pytest.raises(ValidationError):
         GenerationRequest.model_validate({**common, "variant_count": 11})
+
+
+def test_generation_request_rejects_duplicate_custom_roles() -> None:
+    """同一来源职责不能重复占位，避免用户误生成两张完全相同的职责图。"""
+
+    with pytest.raises(ValidationError, match="自定义模板不能重复选择同一职责"):
+        GenerationRequest.model_validate(
+            {
+                "image_type": "set",
+                "template_id": "product_set_01",
+                "visual_template_id": "custom_set",
+                "custom_visual_roles": [
+                    {"template_id": "standard_product", "role_index": 0},
+                    {"template_id": "standard_product", "role_index": 0},
+                ],
+                "model": "nano_banana_2",
+                "aspect_ratio": "1:1",
+                "resolution": "1K",
+                "user_requirement": "重复职责测试",
+            }
+        )
 
 
 def test_capabilities_use_customer_facing_gpt_image_name() -> None:
@@ -190,11 +231,27 @@ def test_capabilities_expose_optional_visual_templates() -> None:
 
     assert supplier["name"] == "企业实力套图"
     assert supplier["category"] == "企业实力"
+    assert supplier["image_types"] == ["set"]
     assert len(supplier["preview_images"]) == 6
     assert supplier["generated_anchor_strategy"] == "independent"
     assert len(set(supplier["role_compositions"])) == 6
     assert "company_name" in [field["key"] for field in supplier["fields"]]
     assert all(field["required"] is False for field in supplier["fields"])
+
+    procurement = payload["visual_templates"]["b2b_procurement_listing"]
+    oem = payload["visual_templates"]["b2b_oem_listing"]
+    fulfillment = payload["visual_templates"]["b2b_fulfillment_listing"]
+    assert procurement["image_types"] == ["listing"]
+    assert oem["image_types"] == ["listing"]
+    assert fulfillment["image_types"] == ["listing"]
+    assert len(procurement["role_highlights"]) == 8
+    assert len(procurement["role_compositions"]) == 8
+    assert len(procurement["preview_images"]) == 8
+    assert len(oem["role_highlights"]) == 8
+    assert len(oem["preview_images"]) == 8
+    assert len(fulfillment["role_highlights"]) == 8
+    assert len(fulfillment["preview_images"]) == 8
+    assert procurement["generated_anchor_strategy"] == "independent"
 
 
 def test_stream_is_ndjson() -> None:
@@ -250,3 +307,46 @@ def test_generation_mode_is_inferred_from_reference_assets() -> None:
 
     assert without_reference.mode == "text-to-image"
     assert with_reference.mode == "image-to-image"
+
+
+def test_generation_mode_is_inferred_from_logo_asset() -> None:
+    """只有 Logo 图片时也必须走图像编辑能力，才能保留用户上传的品牌图形。"""
+
+    request = GenerationRequest(
+        image_type="main",
+        template_id="main_01",
+        model="nano_banana_2",
+        aspect_ratio="1:1",
+        resolution="2K",
+        user_requirement="生成带品牌 Logo 的商品主图",
+        logo_asset=ReferenceAsset(
+            url="https://blob.example/ptj/reference/brand-logo.png",
+            mime_type="image/png",
+            filename="brand-logo.png",
+        ),
+    )
+
+    assert request.mode == "image-to-image"
+    assert request.logo_position == "bottom-right"
+
+
+def test_generation_mode_is_inferred_from_style_reference() -> None:
+    """只有参考设计图和文字时也必须走图像编辑，才能学习目标构图。"""
+
+    request = GenerationRequest(
+        image_type="main",
+        template_id="main_01",
+        model="nano_banana_2",
+        aspect_ratio="1:1",
+        resolution="2K",
+        user_requirement="生成白色咖啡杯主图",
+        style_reference_assets=[
+            ReferenceAsset(
+                url="https://blob.example/ptj/reference/design.png",
+                mime_type="image/png",
+                filename="design.png",
+            )
+        ],
+    )
+
+    assert request.mode == "image-to-image"

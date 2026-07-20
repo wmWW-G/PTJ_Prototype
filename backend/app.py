@@ -145,6 +145,7 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(runtime_settings.allowed_origins),
+        allow_origin_regex=runtime_settings.allowed_origin_regex or None,
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Content-Type"],
@@ -225,7 +226,9 @@ def create_app(
                 "mime_types": ["image/png", "image/jpeg", "image/webp"],
             },
             "max_variant_count": 10,
-            "max_output_images": 60,
+            # 详情图固定为 8 张，且产品保留最多 10 个完整方案的能力，
+            # 因此能力上限同步到 80，避免前端展示的数量与服务端声明冲突。
+            "max_output_images": 80,
         }
 
     @app.post("/api/uploads")

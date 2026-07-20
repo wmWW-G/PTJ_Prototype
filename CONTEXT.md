@@ -8,15 +8,15 @@
 
 前端入口是 `src/main.tsx` 和 `src/App.tsx`。统一生图页面位于 `#/generation`，由 `src/features/generation/GenerationPage.tsx` 提交：
 
-1. 参考图为选填；如果用户上传图片，前端先逐张调用 `POST /api/uploads`，参考图保存到 Vercel Blob。
+1. 图片为选填；如果用户上传图片，前端先逐张调用 `POST /api/uploads`，图片保存到 Vercel Blob。主图会把“参考设计图”写入 `style_reference_assets`，把用户自己的“产品素材图”写入 `reference_assets`，两组图片职责不可混用。
 2. 前端调用 `POST /api/generations/stream`。
-3. FastAPI 根据 `reference_assets` 是否为空自动确定 `text-to-image` 或 `image-to-image`，前端不再提交 `mode`。
+3. FastAPI 根据 `style_reference_assets`、`reference_assets` 或 `logo_asset` 是否存在自动确定 `text-to-image` 或 `image-to-image`，前端不再提交 `mode`。
 4. FastAPI 同时读取“张数/职责模板”和“视觉/信息模板”，调用 Gemini Prompt Planner 生成结构化计划。
 5. `GenerationOrchestrator` 按有图/无图依赖关系调用模型 Adapter。
 6. 结果图写入 Vercel Blob，并通过 `application/x-ndjson` 逐张返回。
 7. 前端归并事件并写入 LocalStorage 历史；任务仍保存实际模式，便于历史详情说明是否使用了参考图。
 
-完整方案数量由下拉框选择，前后端统一允许 1–10 版；当前单版最多 6 张，因此单任务最大输出为 60 张。
+完整方案数量由下拉框选择，前后端统一允许 1–10 版；当前详情图单版最多 8 张，因此单任务最大输出为 80 张。
 
 其他后端入口：
 
@@ -39,8 +39,9 @@
 - `src/features/generation/api.ts`：上传、Capabilities 和 NDJSON 客户端；统一请求不再携带 `mode`。
 - `src/features/generation/liveState.ts`：流事件纯函数归并。
 - `src/features/generation/components/ModelControls.tsx`：动态模型参数。
+- `src/features/generation/components/PromptImageComposer.tsx`：商品图、主图参考设计图、产品素材图、Logo 与补充文字输入；主图使用上下双图片区。
 - `src/features/generation/components/LiveResultsPanel.tsx`：逐张结果控制台。
-- `src/features/generation/components/VisualTemplatePicker.tsx`：模板摘要、右侧选择抽屉、每套模板的二级详情和动态选填信息。
+- `src/features/generation/components/VisualTemplatePicker.tsx`：模板摘要、右侧选择抽屉、每套模板的二级详情、同类职责自定义编排和动态选填信息。
 - `src/features/tasks/`：LocalStorage 历史和旧数据兼容。
 
 早期 Coze 档案仍位于 `WORKFLOWS.md` 和 `coze_nodes/`，它们不是当前真实生图运行依赖。
@@ -60,7 +61,9 @@ job_started → planning → plan_ready → variant_started
 
 任务状态：`queued`、`generating`、`completed`、`partial_success`、`failed`。
 
-生图模式不再由界面选择。`backend/domain.py` 会在构造 `GenerationRequest` 时按参考图自动归一：无参考图为 `text-to-image`，有参考图为 `image-to-image`。旧客户端即使继续传入 `mode`，后端也以实际参考图为准。
+生图模式不再由界面选择。`backend/domain.py` 会在构造 `GenerationRequest` 时按图片自动归一：`style_reference_assets`、`reference_assets` 和 `logo_asset` 都为空时为 `text-to-image`，任意一组存在时为 `image-to-image`。旧客户端即使继续传入 `mode`，后端也以实际图片为准。
+
+主图的两组图片必须保持语义隔离：`reference_assets` 是用户自己的产品素材，决定商品外观、结构、包装和真实 Logo，并且是 Planner 唯一可以用于商品主体分析的图片；`style_reference_assets` 只学习构图层级、机位、光线、配色和留白，禁止复制参考图中的商品、品牌、Logo、文字、水印或受保护图形。最终模型参考顺序固定为“产品素材 → 参考设计 → Logo”。
 
 ## 新需求通常改哪里
 
@@ -72,10 +75,17 @@ job_started → planning → plan_ready → variant_started
 - 改实时卡片：`liveTypes.ts`、`liveState.ts`、`LiveResultsPanel.tsx`。
 - 改上传限制：后端 `storage.py` 与前端 `UploadZone.tsx` 必须同步。
 - 改有图/无图自动分流：`backend/domain.py` 的 `GenerationRequest.infer_reference_mode`，并同步 `GenerationPage.tsx` 的状态提示和请求测试。
+- 改主图双图片输入：前端改 `PromptImageComposer.tsx` 与 `GenerationPage.tsx`；后端必须同步检查 `GenerationRequest.style_reference_assets` 和 `GenerationOrchestrator` 的商品分析隔离测试。
 
 不要把密钥写入前端、`VITE_*`、源码或日志；不要让后端下载任意用户 URL；不要把图 2 继续传给图 3，所有副图只共享原图或同版图 1。
 
 `visual_template_id` 决定视觉方向和每个槽位的展示主题，`template_id` 仍然是张数与稳定 role 的唯一来源。Planner 会把视觉模板的 `role_highlights` 按顺序绑定到各槽位；例如企业实力六图固定为企业总览、仓储与交付、品控流程、研发与定制、认证背书、产能与服务。`supplemental_info` 全部选填；空字段代表未知，Planner 不得补写认证、产能、客户等事实。
+
+视觉模板通过 `image_types` 声明适用业务类型，前端选择器和后端编排器都会校验，避免八张详情图误用六张套图模板。详情图当前提供三套阿里国际站 B2B 模板：`b2b_procurement_listing`（采购决策）、`b2b_oem_listing`（OEM/ODM 定制）和 `b2b_fulfillment_listing`（工厂履约）。三套均固定输出八张：采购决策覆盖产品总览、产品介绍、卖点、结构使用、材质工艺、场景、品质与包装合作；OEM/ODM 覆盖定制总览、产品开发、材质颜色、结构配件、Logo、包装、打样量产与品质交付；工厂履约覆盖工厂团队、制造工艺、来料检验、过程品控、成品检验、检测能力、仓储装柜与项目履约。模板优先使用参考图中可识别的内容，避免强制用户填写 SKU、规格、MOQ、认证、产能和交期等真实数据；任何未提供事实仍不得编造。
+
+套图和详情图都支持“自定义模板”，但它不是任意 Prompt 编辑器。前端只允许从当前类型已登记的职责库中选择、替换和排序：套图固定 6 项，详情图固定 8 项；选择顺序直接对应最终第 1–6 / 1–8 张图片。请求使用 `visual_template_id=custom_set` 或 `custom_listing`，并通过 `custom_visual_roles` 仅提交来源 `template_id` 和零基 `role_index`。后端必须重新从 `VISUAL_TEMPLATES` 恢复职责标题、构图、预览和字段，并校验固定数量、重复项、下标与 `image_types`；禁止跨类型混用，也禁止前端直接提交自定义构图文字。
+
+三套详情模板的 24 张原创 ImageGen 预览位于 `public/demo/generated/b2b/{procurement,oem,fulfillment}/`，每套 8 张、每个职责独立一张。新增或调整职责时必须同步替换对应素材、前端静态回退和后端模板注册，不能复用无关占位图。
 
 OpenRouter GPT-Image-2 当前最多三路并发，剩余槽位等待前一批完成，避免一版套图的副图同时冲击 Key 额度和上游路由。429 必须优先遵守 OpenRouter `Retry-After`，再叠加错峰延迟；不要提高并发，除非已通过当前 Key 的真实批量测试确认容量。
 
@@ -98,6 +108,17 @@ python3.12 -m venv .venv
 .venv/bin/uvicorn backend.app:app --reload --port 8000
 npm run dev
 ```
+
+本地前端默认连接 `http://localhost:8000`。如果只在 Vercel 保存真实模型和
+Blob 凭据，应在被 Git 忽略的 `.env.local` 中配置：
+
+```text
+VITE_API_BASE_URL=https://ptj-image-api.vercel.app
+```
+
+后端通过 `ALLOWED_ORIGINS` 显式放行生产前端域名，并通过
+`ALLOWED_ORIGIN_REGEX` 只放行 `localhost` / `127.0.0.1` 的动态开发端口；
+不要把正则扩大到任意公网来源。
 
 完整无费用验证：
 

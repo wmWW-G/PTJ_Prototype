@@ -66,3 +66,4 @@ def test_default_cors_allows_both_localhost_spellings(monkeypatch) -> None:
 
     assert "http://localhost:5173" in settings.allowed_origins
     assert "http://127.0.0.1:5173" in settings.allowed_origins
+    assert settings.allowed_origin_regex

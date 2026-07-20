@@ -3,7 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { assetPath } from "../../lib/assetPath";
 import { createMockTask, listTasks, saveTask } from "../tasks/taskRepository";
-import type { GenerationMode, GenerationTask, ImageType, RetouchMode } from "../tasks/types";
+import type {
+  CustomVisualRoleSelection,
+  GenerationMode,
+  GenerationTask,
+  ImageType,
+  LogoPosition,
+  RetouchMode,
+} from "../tasks/types";
 import {
   fetchGenerationCapabilities,
   streamGeneration,
@@ -52,6 +59,11 @@ const templateIds: Record<ImageType, string> = {
   set: "product_set_01",
   listing: "listing_01",
   poster: "poster_01",
+};
+type TemplatedImageType = Extract<ImageType, "set" | "listing">;
+const defaultVisualTemplateIds: Record<TemplatedImageType, string> = {
+  set: "standard_product",
+  listing: "b2b_procurement_listing",
 };
 const modeResultImages: Record<GenerationMode, string[]> = {
   "text-to-image": [
@@ -176,15 +188,38 @@ export function GenerationPage({ mode }: GenerationPageProps) {
   });
   const [sourceImages, setSourceImages] = useState<string[]>([]);
   const [sourceFiles, setSourceFiles] = useState<File[]>([]);
+  const [styleImages, setStyleImages] = useState<string[]>([]);
+  const [styleFiles, setStyleFiles] = useState<File[]>([]);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPosition, setLogoPosition] = useState<LogoPosition>(
+    editingTask?.logoPosition ?? "bottom-right",
+  );
   const [garmentImages, setGarmentImages] = useState<string[]>([]);
   const [modelImages, setModelImages] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [liveState, setLiveState] = useState<LiveGenerationState>(createInitialLiveState);
   const [liveError, setLiveError] = useState("");
   const [capabilities, setCapabilities] = useState<GenerationCapabilities | null>(null);
-  const [visualTemplateId, setVisualTemplateId] = useState(
-    editingTask?.visualTemplateId ?? "standard_product",
-  );
+  // 套图和详情图维护各自的模板选择，用户来回切换图片类型时不会互相覆盖。
+  const [visualTemplateIds, setVisualTemplateIds] = useState<Record<TemplatedImageType, string>>({
+    set: editingTask?.imageType === "set"
+      ? editingTask.visualTemplateId ?? defaultVisualTemplateIds.set
+      : defaultVisualTemplateIds.set,
+    listing: editingTask?.imageType === "listing"
+      ? editingTask.visualTemplateId ?? defaultVisualTemplateIds.listing
+      : defaultVisualTemplateIds.listing,
+  });
+  // 套图和详情图各自保存自定义职责顺序；切换图片类型或暂时使用预设模板时不丢失。
+  const [customVisualRoles, setCustomVisualRoles] = useState<
+    Record<TemplatedImageType, CustomVisualRoleSelection[]>
+  >({
+    set: editingTask?.imageType === "set"
+      ? (editingTask.customVisualRoles ?? []).map((role) => ({ ...role }))
+      : [],
+    listing: editingTask?.imageType === "listing"
+      ? (editingTask.customVisualRoles ?? []).map((role) => ({ ...role }))
+      : [],
+  });
   const [supplementalInfo, setSupplementalInfo] = useState<Record<string, string>>(
     editingTask?.supplementalInfo ?? {},
   );
@@ -194,11 +229,34 @@ export function GenerationPage({ mode }: GenerationPageProps) {
   const generationAbortRef = useRef<AbortController | null>(null);
   const hasInlineResults = isLiveMode;
   const templateId = templateIds[imageType];
+  const visualTemplateId = imageType === "set" || imageType === "listing"
+    ? visualTemplateIds[imageType]
+    : "standard_product";
+  const activeCustomVisualRoles = imageType === "set" || imageType === "listing"
+    ? customVisualRoles[imageType]
+    : [];
   const activeGenerationMode: Extract<GenerationMode, "text-to-image" | "image-to-image"> =
-    sourceFiles.length > 0 ? "image-to-image" : "text-to-image";
+    sourceFiles.length > 0 || (imageType === "main" && styleFiles.length > 0) || logoFile
+      ? "image-to-image"
+      : "text-to-image";
   const slotCount =
     capabilities?.templates[templateId]?.slot_count ?? IMAGE_TYPE_RESULT_COUNTS[imageType];
   const plannedOutputCount = slotCount * quantity;
+
+  /** 只更新当前有模板选择器的图片类型，保持套图和详情图各自的选择。 */
+  function setActiveVisualTemplateId(templateValue: string) {
+    if (imageType !== "set" && imageType !== "listing") return;
+    setVisualTemplateIds((current) => ({ ...current, [imageType]: templateValue }));
+  }
+
+  /** 更新当前图片类型的自定义职责顺序，不影响另一种图片类型。 */
+  function setActiveCustomVisualRoles(roles: CustomVisualRoleSelection[]) {
+    if (imageType !== "set" && imageType !== "listing") return;
+    setCustomVisualRoles((current) => ({
+      ...current,
+      [imageType]: roles.map((role) => ({ ...role })),
+    }));
+  }
 
   /** 模式变化时重读历史，避免 React Router 复用组件后显示旧页面任务。 */
   useEffect(() => {
@@ -281,7 +339,11 @@ export function GenerationPage({ mode }: GenerationPageProps) {
     }
     // 后端 Planner 需要非空文本。用户只上传图片时，用中性的执行说明补齐，
     // 不虚构商品卖点，也不强迫用户为了提交而重复描述图片内容。
-    const requirement = typedRequirement || "请以已上传的商品参考图为主体，保留商品真实外观与关键特征，并按所选模板生成电商图片。";
+    const requirement = typedRequirement || (
+      imageType === "main"
+        ? "请以已上传的产品素材图为主体，保留商品真实外观与关键特征；参考设计图只用于构图、光线与画面风格。"
+        : "请以已上传的商品参考图为主体，保留商品真实外观与关键特征，并按当前图片类型生成电商图片。"
+    );
 
     setIsGenerating(true);
     setLiveError("");
@@ -298,12 +360,18 @@ export function GenerationPage({ mode }: GenerationPageProps) {
       aspectRatio: modelValue.aspectRatio,
       templateId,
       visualTemplateId,
+      customVisualRoles: visualTemplateId.startsWith("custom_")
+        ? activeCustomVisualRoles
+        : [],
       supplementalInfo,
       resolution: modelValue.resolution,
       quality: modelValue.quality,
       quantity,
       variantCount: quantity,
+      styleImages: imageType === "main" ? styleImages : [],
       sourceImages,
+      logoImage: editingTask?.logoImage,
+      logoPosition,
     });
     saveTask(task);
     refreshTasks();
@@ -313,9 +381,22 @@ export function GenerationPage({ mode }: GenerationPageProps) {
       const referenceAssets = await Promise.all(
         sourceFiles.map((file) => uploadReference(file, controller.signal)),
       );
+      // 主图参考设计图单独上传和传参，只用于学习构图与风格。
+      const styleReferenceAssets = imageType === "main"
+        ? await Promise.all(
+          styleFiles.map((file) => uploadReference(file, controller.signal)),
+        )
+        : [];
+      // Logo 复用同一受控上传接口，但在请求中保持独立字段，避免商品分析误判。
+      const logoAsset = logoFile
+        ? await uploadReference(logoFile, controller.signal)
+        : undefined;
       task = {
         ...task,
+        styleImages: styleReferenceAssets.map((asset) => asset.url),
         sourceImages: referenceAssets.map((asset) => asset.url),
+        logoImage: logoAsset?.url,
+        logoPosition,
       };
       saveTask(task);
 
@@ -324,6 +405,9 @@ export function GenerationPage({ mode }: GenerationPageProps) {
           image_type: imageType,
           template_id: templateId,
           visual_template_id: visualTemplateId,
+          custom_visual_roles: visualTemplateId.startsWith("custom_")
+            ? activeCustomVisualRoles
+            : [],
           model: modelValue.model,
           aspect_ratio: modelValue.aspectRatio,
           resolution: modelValue.resolution,
@@ -335,7 +419,10 @@ export function GenerationPage({ mode }: GenerationPageProps) {
           variant_count: quantity,
           user_requirement: requirement,
           supplemental_info: supplementalInfo,
+          style_reference_assets: styleReferenceAssets,
           reference_assets: referenceAssets,
+          logo_asset: logoAsset,
+          logo_position: logoAsset ? logoPosition : undefined,
         },
         (event) => {
           latestState = reduceGenerationEvent(latestState, event);
@@ -402,37 +489,41 @@ export function GenerationPage({ mode }: GenerationPageProps) {
           {config.hasImageTypes && (
             <div className={styles.imageTypeBlock}>
               <div className={styles.segmented} aria-label="图片类型">
-                {imageTypes.map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    className={imageType === item.value ? styles.selected : ""}
-                    onClick={() => setImageType(item.value)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-              <div className={styles.typeCounts} aria-label="各类型固定生成张数">
                 {imageTypes.map((item) => {
+                  // 每种图片类型的固定张数直接放进对应按钮，减少用户上下对照的成本。
                   const count = capabilities?.templates[templateIds[item.value]]?.slot_count
                     ?? IMAGE_TYPE_RESULT_COUNTS[item.value];
                   return (
-                    <span key={item.value} className={imageType === item.value ? styles.activeCount : ""}>
-                      {item.label} {count}张 / 版
-                    </span>
+                    <button
+                      key={item.value}
+                      type="button"
+                      aria-label={`${item.label}，${count}张每版`}
+                      aria-pressed={imageType === item.value}
+                      className={imageType === item.value ? styles.selected : ""}
+                      onClick={() => setImageType(item.value)}
+                    >
+                      <span>{item.label}</span>
+                      <small>{count}张 / 版</small>
+                    </button>
                   );
                 })}
               </div>
             </div>
           )}
 
-          {isLiveMode && (
+          {isLiveMode && (imageType === "set" || imageType === "listing") && (
             <VisualTemplatePicker
+              key={imageType}
+              imageType={imageType}
               value={visualTemplateId}
+              customRoles={activeCustomVisualRoles}
               supplementalInfo={supplementalInfo}
-              templates={capabilities?.visual_templates ?? DEFAULT_VISUAL_TEMPLATES}
-              onChange={setVisualTemplateId}
+              templates={{
+                ...DEFAULT_VISUAL_TEMPLATES,
+                ...(capabilities?.visual_templates ?? {}),
+              }}
+              onChange={setActiveVisualTemplateId}
+              onCustomRolesChange={setActiveCustomVisualRoles}
               onInfoChange={setSupplementalInfo}
             />
           )}
@@ -462,14 +553,27 @@ export function GenerationPage({ mode }: GenerationPageProps) {
 
           {isLiveMode ? (
             <PromptImageComposer
-              label={config.promptLabel}
+              layout={imageType === "main" ? "main" : "standard"}
+              label={imageType === "main" ? "补充要求（选填）" : config.promptLabel}
               value={prompt}
-              placeholder={config.promptPlaceholder}
-              maxLength={4000}
+              placeholder={imageType === "main"
+                ? "简单补充背景、场景、文案或必须保留的细节"
+                : config.promptPlaceholder}
+              maxLength={imageType === "main" ? 500 : 4000}
               onChange={setPrompt}
               onImagesChange={(urls, files) => {
                 setSourceImages(urls);
                 setSourceFiles(files);
+              }}
+              onStyleImagesChange={(urls, files) => {
+                setStyleImages(urls);
+                setStyleFiles(files);
+              }}
+              maxImages={imageType === "main" ? 6 : 10}
+              logoPosition={logoPosition}
+              onLogoChange={(file, position) => {
+                setLogoFile(file);
+                setLogoPosition(position);
               }}
             />
           ) : (
@@ -538,7 +642,9 @@ export function GenerationPage({ mode }: GenerationPageProps) {
           </button>
           <p className={styles.creditHint}>
             {isLiveMode
-              ? activeGenerationMode === "image-to-image"
+              ? logoFile && sourceFiles.length === 0
+                ? "Logo 会作为独立品牌参考传入，不会被当成商品主体。"
+                : activeGenerationMode === "image-to-image"
                 ? "原始参考图会被所有槽位复用；图片之间不会串联漂移。"
                 : "无图模式先生成基准图 1，再并发生成同版其余图片。"
               : `预计消耗 ${plannedOutputCount} 张图额度`}

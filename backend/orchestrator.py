@@ -26,7 +26,7 @@ from .domain import (
 from .limiter import AsyncRateLimiter
 from .providers import ImageProvider
 from .templates import get_template
-from .visual_templates import get_visual_template
+from .visual_templates import build_custom_visual_template, get_visual_template
 
 
 logger = logging.getLogger(__name__)
@@ -317,7 +317,17 @@ class GenerationOrchestrator:
         yield StreamEvent(type="job_started", job_id=job_id, status="planning")
         try:
             template = get_template(request.template_id)
-            visual_template = get_visual_template(request.visual_template_id)
+            custom_template_id = f"custom_{request.image_type}"
+            if request.visual_template_id == custom_template_id:
+                visual_template = build_custom_visual_template(
+                    image_type=request.image_type,
+                    selections=request.custom_visual_roles,
+                    expected_count=len(template.slots),
+                )
+            else:
+                if request.custom_visual_roles:
+                    raise ValueError("自定义职责只能用于自定义模板")
+                visual_template = get_visual_template(request.visual_template_id)
             allowed_info_keys = {field.key for field in visual_template.fields}
             supplemental_info = {
                 key: value
@@ -326,18 +336,53 @@ class GenerationOrchestrator:
             }
             if template.image_type != request.image_type:
                 raise ValueError("图片类型与服务器模板不匹配")
+            if request.image_type not in visual_template.image_types:
+                raise ValueError("当前生图模板不适用于所选图片类型")
             provider = self._providers.get(request.model)
             limiter = self._limiters[request.model]
 
-            # 原始参考图只下载一次；后续每个槽位共享同一二进制集合。
-            references = [
+            # 用户自己的产品素材只下载一次，并交给 Planner 提取真实商品特征。
+            product_references = [
                 await self._storage.load_reference(asset)
                 for asset in request.reference_assets
             ]
+            # 参考设计图与产品素材严格分开：它只参与最终构图，不进入商品分析。
+            style_references = [
+                BinaryAsset(
+                    data=loaded.data,
+                    mime_type=loaded.mime_type,
+                    name=f"style-reference-{index}",
+                )
+                for index, loaded in enumerate(
+                    [
+                        await self._storage.load_reference(asset)
+                        for asset in request.style_reference_assets
+                    ],
+                    start=1,
+                )
+            ]
+            logo_reference = (
+                await self._storage.load_reference(request.logo_asset)
+                if request.logo_asset is not None
+                else None
+            )
+            # 最终参考顺序固定为“产品素材 → 参考设计 → Logo”，Prompt 会明确每组职责。
+            generation_references: list[BinaryAsset] = [
+                *product_references,
+                *style_references,
+            ]
+            if logo_reference is not None:
+                generation_references.append(
+                    BinaryAsset(
+                        data=logo_reference.data,
+                        mime_type=logo_reference.mime_type,
+                        name="brand-logo",
+                    )
+                )
             yield StreamEvent(type="planning", job_id=job_id, status="planning")
             context = await self._planner.analyze_product(
                 user_requirement=request.user_requirement,
-                references=references,
+                references=product_references,
                 language=request.language,
                 visual_template=visual_template,
                 supplemental_info=supplemental_info,
@@ -362,6 +407,27 @@ class GenerationOrchestrator:
                     visual_template=visual_template,
                     supplemental_info=supplemental_info,
                 )
+                global_prompt = plan.global_consistency_prompt
+                if style_references:
+                    global_prompt += (
+                        "\n\n参考图片序列中，用户产品素材之后、品牌 Logo 之前的图片是参考设计图。"
+                        "只能学习其构图层级、镜头视角、光线、配色和留白节奏；不得复制其中的"
+                        "商品外观、品牌、Logo、文字、水印或受保护的独特图形。最终商品主体必须"
+                        "严格来自用户产品素材；没有产品素材时，严格来自用户文字要求。"
+                    )
+                if logo_reference is not None:
+                    position_names = {
+                        "top-left": "左上角",
+                        "top-right": "右上角",
+                        "bottom-left": "左下角",
+                        "bottom-right": "右下角",
+                        "center": "画面中央",
+                    }
+                    global_prompt += (
+                        "\n\n最后一张参考图是用户上传的品牌 Logo。必须原样保留其文字、"
+                        "颜色、比例和图形结构，不得重绘、改写或生成其他 Logo；将它以克制尺寸"
+                        f"放在{position_names[request.logo_position]}，保留安全边距，不遮挡商品主体和卖点。"
+                    )
                 yield StreamEvent(
                     type="plan_ready",
                     job_id=job_id,
@@ -377,10 +443,10 @@ class GenerationOrchestrator:
                 )
 
                 remaining_prompts = plan.image_prompts
-                active_references: Sequence[BinaryAsset] = references
+                active_references: Sequence[BinaryAsset] = generation_references
                 use_generate_for_remaining = False
 
-                if not references:
+                if not generation_references:
                     # 无图模式先生成图 1。标准商品套图会继续用它统一商品外观；
                     # 企业实力等复杂信息图不能复用成品图，否则模型会把整个版式一起复制。
                     anchor_prompt = plan.image_prompts[0]
@@ -396,7 +462,7 @@ class GenerationOrchestrator:
                         job_id=job_id,
                         variant_index=variant_index,
                         image_prompt=anchor_prompt,
-                        global_prompt=plan.global_consistency_prompt,
+                        global_prompt=global_prompt,
                         spec=spec,
                         provider=provider,
                         limiter=limiter,
@@ -450,7 +516,7 @@ class GenerationOrchestrator:
                                 job_id=job_id,
                                 variant_index=variant_index,
                                 image_prompt=image_prompt,
-                                global_prompt=plan.global_consistency_prompt,
+                                global_prompt=global_prompt,
                                 spec=spec,
                                 provider=provider,
                                 limiter=limiter,
@@ -459,7 +525,7 @@ class GenerationOrchestrator:
                             )
                         )
                     )
-                variant_success = 1 if not references else 0
+                variant_success = 1 if not generation_references else 0
                 variant_failed = 0
                 for completed in asyncio.as_completed(tasks):
                     result, _generated = await completed

@@ -196,3 +196,60 @@ async def test_planner_includes_visual_template_and_verified_optional_informatio
     assert [item.role for item in plan.image_prompts] == [
         slot.role for slot in get_template("product_set_01").slots
     ]
+
+
+@pytest.mark.asyncio
+async def test_procurement_listing_template_binds_ten_b2b_roles() -> None:
+    """采购详情模板的十个职责必须逐张进入 Planner，不能退回通用详情主题。"""
+
+    client = FakeGoogleClient([_valid_plan(8)])
+    planner = PromptPlanner(client=client, model="gemini-3.5-flash")
+
+    plan = await planner.plan_variant(
+        template=get_template("listing_01"),
+        visual_template=get_visual_template("b2b_procurement_listing"),
+        supplemental_info={
+            "buyer_application": "海外咖啡店批量采购",
+            "packaging_shipping": "中性彩盒与打样沟通",
+        },
+        context=ProductContext(
+            product_name="白色陶瓷马克杯",
+            product_description="适合餐饮渠道采购的防烫陶瓷杯",
+            visual_style="B2B 采购详情页",
+        ),
+        user_requirement="生成阿里国际站详情图",
+        language="zh-CN",
+        target_model="nano_banana_2",
+        variant_index=1,
+    )
+
+    payload = client.requests[0][1]
+    instruction = json.loads(payload["contents"][0]["parts"][0]["text"])
+    assert [item["title"] for item in instruction["slot_visual_directions"]] == [
+        "产品与应用总览",
+        "产品介绍",
+        "核心卖点与采购价值",
+        "结构细节与使用说明",
+        "材质质感与制作工艺",
+        "使用场景与终端适配",
+        "品质控制与信任背书",
+        "包装定制与合作流程",
+    ]
+    assert len({
+        item["required_composition"]
+        for item in instruction["slot_visual_directions"]
+    }) == 8
+    assert instruction["verified_supplemental_info"] == {
+        "buyer_application": "海外咖啡店批量采购",
+        "packaging_shipping": "中性彩盒与打样沟通",
+    }
+    assert [item.title for item in plan.image_prompts] == [
+        "产品与应用总览",
+        "产品介绍",
+        "核心卖点与采购价值",
+        "结构细节与使用说明",
+        "材质质感与制作工艺",
+        "使用场景与终端适配",
+        "品质控制与信任背书",
+        "包装定制与合作流程",
+    ]

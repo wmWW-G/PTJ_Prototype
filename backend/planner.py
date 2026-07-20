@@ -260,7 +260,7 @@ class PromptPlanner:
                 "不得虚构参数、认证、销量、产能、客户或测试结果",
                 "可见文字只能来自用户明确提供的内容",
                 "每个 prompt 必须独立完整，并包含全局一致性要求",
-                "每张图必须严格覆盖 slot_visual_directions 中对应的 title，且六张主题不得重复",
+                "每张图必须严格覆盖 slot_visual_directions 中对应的 title，且同一版内各张主题不得重复",
                 "slot_visual_directions 的 title 优先于 template.slots 的默认主题，但不得改变 index 和 role",
                 "每个 prompt 必须严格执行对应的 required_composition，不得改用其他槽位的版式",
                 "全局一致性只约束商品身份、配色和品牌气质，不得要求全部图片复用同一构图、网格、图标、背景或信息块",

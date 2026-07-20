@@ -53,7 +53,7 @@
   box-shadow: 0 4px 18px rgb(67 54 42 / 4%);
 }
 
-.imageTypeBlock { margin-bottom: 26px; }
+.imageTypeBlock { margin-bottom: 22px; }
 
 .segmented,
 .retouchModes {
@@ -84,6 +84,28 @@
 .retouchModes button:hover,
 .ratios button:hover { color: var(--brand-700); }
 
+/* 图片类型与固定张数使用两行紧凑布局，避免在按钮下方重复展示一整行说明。 */
+.segmented button {
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.15;
+}
+
+.segmented button small {
+  color: var(--ink-500);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.segmented button.selected small {
+  color: var(--brand-600);
+  font-weight: 700;
+}
+
 .selected {
   border-color: var(--brand-500) !important;
   color: var(--brand-700) !important;
@@ -91,18 +113,6 @@
   box-shadow: 0 2px 8px rgb(66 50 36 / 6%);
   font-weight: 700;
 }
-
-.typeCounts {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  margin-top: 10px;
-  color: var(--ink-500);
-  font-size: 11px;
-  text-align: center;
-}
-
-.typeCounts .activeCount { color: var(--brand-600); font-weight: 700; }
 
 .fieldLabel {
   display: block;
@@ -184,7 +194,125 @@
 .promptField textarea:focus { border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-50); outline: 0; }
 .promptField small { position: absolute; right: 11px; bottom: 10px; color: var(--ink-500); font-size: 10px; }
 
-.promptComposer { margin: 0 0 22px; }
+.promptComposer { position: relative; margin: 0 0 22px; }
+.mainPromptComposer { display: grid; gap: 12px; }
+.mainReferenceCard {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #e2ddd7;
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow: 0 3px 12px rgb(67 54 42 / 4%);
+}
+.mainReferenceCard > header {
+  height: 60px;
+  min-height: 60px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+}
+.mainReferenceIcon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  color: var(--brand-700);
+  background: var(--brand-50);
+}
+.mainReferenceCard > header > div { min-width: 0; display: grid; gap: 2px; }
+.mainReferenceCard > header strong { color: var(--ink-950); font-size: 12px; }
+.mainReferenceCard > header small {
+  overflow: hidden;
+  color: var(--ink-500);
+  font-size: 9px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mainReferenceCard > header > b { color: var(--ink-500); font-size: 10px; font-weight: 600; }
+.mainCardHeaderActions { display: flex; align-items: center; gap: 8px; }
+.mainCardHeaderActions > b { color: var(--ink-500); font-size: 10px; font-weight: 600; white-space: nowrap; }
+.mainCardHeaderActions .logoTrigger { height: 26px; padding: 0 7px; }
+.mainReferenceDropzone { padding: 0 12px 12px; }
+.mainReferenceDropzone > button {
+  width: 100%;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px dashed #d8d4cf;
+  border-radius: 9px;
+  color: var(--ink-700);
+  background: #fcfbf9;
+  transition: border-color .16s ease, background .16s ease;
+}
+.mainReferenceDropzone > button:hover { border-color: var(--brand-500); background: #fff9f1; }
+.mainReferenceDropzone > button > svg {
+  width: 36px;
+  height: 36px;
+  padding: 8px;
+  flex: none;
+  border-radius: 50%;
+  color: var(--brand-700);
+  background: var(--brand-50);
+}
+.mainReferenceDropzone > button > span { display: grid; gap: 3px; text-align: left; }
+.mainReferenceDropzone strong { color: var(--ink-900); font-size: 11px; }
+.mainReferenceDropzone small { color: var(--ink-500); font-size: 9px; }
+.mainProductDropzone { outline: 0; transition: background .16s ease; }
+.mainProductDropzone.composerDragging { border: 0; background: transparent; box-shadow: none; }
+.mainProductDropzone.composerDragging > button { border-color: var(--brand-500); background: #fff8ef; box-shadow: 0 0 0 3px var(--brand-50); }
+.mainProductDropzone .composerPreviews { padding: 8px 0 0; background: transparent; }
+.mainReferenceCard > .logoPopover { top: 52px; right: 12px; }
+.mainSelectedAsset {
+  min-height: 68px;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 10px;
+  margin: 0 12px 12px;
+  padding: 7px;
+  border: 1px solid #eee4d8;
+  border-radius: 9px;
+  background: #fffaf4;
+}
+.mainSelectedAsset > button:first-child { width: 52px; height: 52px; overflow: hidden; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: white; }
+.mainSelectedAsset img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.mainSelectedAsset > div { min-width: 0; display: grid; gap: 3px; }
+.mainSelectedAsset > div strong { overflow: hidden; color: var(--ink-900); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.mainSelectedAsset > div small { color: var(--ink-500); font-size: 9px; line-height: 1.4; }
+.mainSelectedAsset > button:last-child { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px; color: var(--ink-500); background: #f2ece5; }
+.mainSupplementPanel {
+  overflow: hidden;
+  border: 1px solid #e2ddd7;
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow: 0 3px 12px rgb(67 54 42 / 4%);
+}
+.mainSupplementPanel .composerTextHeading { min-height: 34px; padding: 8px 12px 0; border-top: 0; }
+.mainSupplementPanel textarea {
+  width: 100%;
+  min-height: 48px;
+  display: block;
+  resize: vertical;
+  padding: 5px 12px 8px;
+  border: 0;
+  color: var(--ink-950);
+  background: transparent;
+  font-size: 12px;
+  line-height: 1.55;
+  outline: 0;
+}
+.mainSupplementPanel textarea::placeholder { color: #91877e; }
+.mainSupplementPanel:focus-within { border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-50); }
+.mainSupplementPanel .composerFooter { min-height: 28px; padding: 5px 12px; }
 .composerHeading {
   display: flex;
   align-items: center;
@@ -193,6 +321,8 @@
   margin-bottom: 9px;
 }
 .composerHeading > div { display: flex; align-items: center; gap: 7px; }
+.mainPromptComposer .composerHeading { margin: 0; padding: 0 2px; }
+.mainPromptComposer .composerHeading > div { min-width: 0; }
 .composerHeading .fieldLabel { margin: 0; }
 .composerHeading b {
   padding: 3px 6px;
@@ -203,6 +333,82 @@
   font-weight: 750;
 }
 .composerHeading > small { color: var(--ink-500); font-size: 9px; }
+.composerHeadingActions { display: flex; align-items: center; gap: 8px; }
+.composerHeadingActions > small { color: var(--ink-500); font-size: 9px; }
+.logoTrigger {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid #e7be8a;
+  border-radius: 7px;
+  color: var(--brand-700);
+  background: #fff8ee;
+  font-size: 10px;
+  font-weight: 750;
+  transition: border-color .16s ease, background .16s ease, transform .16s ease;
+}
+.logoTrigger:hover { transform: translateY(-1px); border-color: var(--brand-500); background: var(--brand-50); }
+.logoTrigger img { width: 18px; height: 18px; border-radius: 4px; object-fit: contain; background: white; }
+.logoTriggerActive { border-color: var(--brand-500); background: var(--brand-50); }
+.logoPopover {
+  position: absolute;
+  z-index: 20;
+  top: 34px;
+  right: 0;
+  width: min(292px, calc(100vw - 48px));
+  padding: 12px;
+  border: 1px solid #e5d6c5;
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow: 0 18px 46px rgb(57 42 30 / 18%);
+  animation: enter .18s cubic-bezier(.22, 1, .36, 1) both;
+}
+.logoPopover > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.logoPopover > header > div { min-width: 0; display: grid; gap: 2px; }
+.logoPopover > header strong { color: var(--ink-950); font-size: 12px; }
+.logoPopover > header small { color: var(--ink-500); font-size: 9px; }
+.logoPopover > header > button,
+.logoSelectedRow > button:last-child {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: var(--ink-500);
+  background: #f7f3ee;
+}
+.logoUploadButton {
+  width: 100%;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 8px 12px;
+  border: 1px dashed #e2a65d;
+  border-radius: 8px;
+  color: var(--brand-700);
+  background: #fffaf4;
+}
+.logoUploadButton > span { display: grid; gap: 2px; text-align: left; }
+.logoUploadButton strong { color: var(--ink-900); font-size: 11px; }
+.logoUploadButton small { color: var(--ink-500); font-size: 9px; }
+.logoSelectedRow { min-height: 54px; display: grid; grid-template-columns: 42px minmax(0, 1fr) 28px; align-items: center; gap: 9px; padding: 6px; border: 1px solid #eee4d8; border-radius: 8px; background: #fffaf4; }
+.logoSelectedRow > button:first-child { width: 42px; height: 42px; overflow: hidden; padding: 0; border: 1px solid var(--line); border-radius: 7px; background: white; }
+.logoSelectedRow img { width: 100%; height: 100%; object-fit: contain; }
+.logoSelectedRow > div { min-width: 0; display: grid; gap: 3px; }
+.logoSelectedRow > div strong { overflow: hidden; color: var(--ink-800); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.logoSelectedRow > div small { color: var(--ink-500); font-size: 9px; }
+.logoPositionControl { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 10px; margin-top: 10px; }
+.logoPositionControl > span:first-child { color: var(--ink-700); font-size: 10px; font-weight: 700; }
+.logoPositionControl .selectWrap select { height: 32px; padding: 0 30px 0 10px; border-radius: 7px; font-size: 10px; }
+.logoPositionControl .selectWrap svg { top: 9px; right: 9px; }
+.logoPopover > p { margin: 8px 0 0; color: var(--ink-500); font-size: 9px; line-height: 1.45; }
 .composerShell {
   position: relative;
   overflow: hidden;
@@ -339,8 +545,6 @@
 .composerFooter > span { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; }
 .composerFooter > span svg { color: var(--brand-600); }
 .composerFileInput { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.composerHelp { margin: 7px 2px 0; color: #8a633d; font-size: 10px; line-height: 1.5; }
-
 .imagePreviewLayer { position: fixed; z-index: 80; inset: 0; display: grid; place-items: center; padding: 28px; }
 .imagePreviewBackdrop { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; background: rgb(39 32 27 / 58%); backdrop-filter: blur(4px); }
 .imagePreviewDialog {

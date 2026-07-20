@@ -15,7 +15,7 @@ describe("GenerationPage", () => {
     expect(IMAGE_TYPE_RESULT_COUNTS).toEqual({
       main: 1,
       set: 6,
-      listing: 5,
+      listing: 8,
       poster: 1,
     });
   });
@@ -59,6 +59,92 @@ describe("GenerationPage", () => {
     expect(screen.queryByRole("heading", { name: "批量生图" })).not.toBeInTheDocument();
   });
 
+  it("把每版张数并入对应图片类型，并移除重复输入说明", () => {
+    render(
+      <MemoryRouter>
+        <GenerationPage mode="generate" />
+      </MemoryRouter>,
+    );
+
+    const imageTypes = screen.getByLabelText("图片类型");
+    expect(within(imageTypes).getByRole("button", { name: "主图，1张每版" })).toBeInTheDocument();
+    expect(within(imageTypes).getByRole("button", { name: "套图，6张每版" })).toBeInTheDocument();
+    expect(within(imageTypes).getByRole("button", { name: "详情图，8张每版" })).toBeInTheDocument();
+    expect(within(imageTypes).getByRole("button", { name: "海报，1张每版" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("各类型固定生成张数")).not.toBeInTheDocument();
+    expect(screen.queryByText("最多 10 张")).not.toBeInTheDocument();
+    expect(screen.queryByText("有参考图时会优先识别并保留商品特征；没有图片时，才根据文字从头生成。")).not.toBeInTheDocument();
+  });
+
+  it("套图和详情图各自展示专属模板，主图使用设计参考与产品素材双输入", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <GenerationPage mode="generate" />
+      </MemoryRouter>,
+    );
+
+    // 默认套图保留视觉模板选择器。
+    expect(screen.getByLabelText("生图模板")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "主图，1张每版" }));
+
+    expect(screen.queryByLabelText("生图模板")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("主图素材与补充说明")).toBeInTheDocument();
+    const designReferenceCard = screen.getByLabelText("参考设计图");
+    const productAssetCard = screen.getByLabelText("产品素材图");
+    expect(designReferenceCard).toBeInTheDocument();
+    expect(productAssetCard).toBeInTheDocument();
+    // 两类图片使用完全相同的卡片骨架，避免主图页面出现两套视觉规范。
+    expect(designReferenceCard.className).toBe(productAssetCard.className);
+    expect(screen.getByRole("button", { name: "上传参考设计图" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "上传产品素材图" })).toBeInTheDocument();
+    expect(screen.getByLabelText("主图补充要求")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "补充要求（选填）" })).toHaveAttribute("maxlength", "500");
+
+    // 详情图展示 B2B 专属模板，同时继续保留商品图片与补充说明输入区。
+    await user.click(screen.getByRole("button", { name: "详情图，8张每版" }));
+    expect(screen.getByLabelText("生图模板")).toBeInTheDocument();
+    expect(screen.getByText("采购决策详情")).toBeInTheDocument();
+    expect(screen.getByLabelText("商品图片与补充说明")).toBeInTheDocument();
+
+    // 套图和详情图维护独立默认选择，切回套图不会被详情图模板污染。
+    await user.click(screen.getByRole("button", { name: "套图，6张每版" }));
+    expect(screen.getByText("标准商品套图")).toBeInTheDocument();
+  });
+
+  it("主图可以分别上传参考设计图和自己的产品素材", async () => {
+    const user = userEvent.setup();
+    let objectUrlIndex = 0;
+    vi.spyOn(URL, "createObjectURL").mockImplementation(
+      () => `blob:main-reference-${objectUrlIndex += 1}`,
+    );
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+
+    render(
+      <MemoryRouter>
+        <GenerationPage mode="generate" />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole("button", { name: "主图，1张每版" }));
+
+    const composer = screen.getByLabelText("主图素材与补充说明");
+    const styleFile = new File(["style"], "reference-layout.png", { type: "image/png" });
+    const productFile = new File(["product"], "my-product.jpg", { type: "image/jpeg" });
+
+    fireEvent.change(within(composer).getByLabelText("选择参考设计图文件"), {
+      target: { files: [styleFile] },
+    });
+    fireEvent.change(within(composer).getByLabelText("选择产品素材图文件"), {
+      target: { files: [productFile] },
+    });
+
+    expect(within(composer).getByAltText("reference-layout.png")).toBeInTheDocument();
+    expect(within(composer).getByAltText("my-product.jpg")).toBeInTheDocument();
+    expect(within(composer).getByText("仅学习构图与风格，不复制商品和品牌")).toBeInTheDocument();
+    expect(within(composer).getByText("1/6")).toBeInTheDocument();
+  });
+
   it("把方案数量合并进真实生图参数区", () => {
     render(
       <MemoryRouter>
@@ -72,16 +158,22 @@ describe("GenerationPage", () => {
     expect(within(parameters).getByRole("combobox", { name: "完整方案数量" })).toHaveTextContent("10");
   });
 
-  it("移除 Logo 区域", () => {
+  it("把 Logo 收进商品参考图标题旁的紧凑入口", async () => {
+    const user = userEvent.setup();
     render(
       <MemoryRouter>
         <GenerationPage mode="generate" />
       </MemoryRouter>,
     );
 
+    const trigger = screen.getByRole("button", { name: "添加 Logo" });
+    expect(trigger).toBeInTheDocument();
     expect(screen.queryByText("批量加文字 / LOGO（选填）")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Logo 文字")).not.toBeInTheDocument();
-    expect(screen.queryByText("上传 LOGO")).not.toBeInTheDocument();
+
+    await user.click(trigger);
+    expect(screen.getByRole("dialog", { name: "添加品牌 Logo" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Logo 显示位置")).toHaveValue("bottom-right");
+    expect(screen.getByText("默认使用克制尺寸和安全边距，不遮挡商品主体。")).toBeInTheDocument();
   });
 
   it("在同一个输入区支持粘贴、拖入、查看和移除参考图", async () => {

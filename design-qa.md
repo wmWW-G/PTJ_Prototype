@@ -1,5 +1,170 @@
 # Design QA
 
+## 2026-07-20 套图与详情图自定义模板验收
+
+- source visual truth:
+  - `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/detail-b2b-eight-template-library.png`
+  - `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/detail-b2b-eight-procurement-roles.png`
+- browser-rendered implementation screenshots:
+  - `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/custom-template-set-library.png`
+  - `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/custom-template-set-builder.png`
+  - `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/custom-template-listing-library.png`
+  - `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/custom-template-listing-builder.png`
+- combined comparison evidence:
+  - `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/custom-template-listing-comparison.png`
+  - `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/custom-template-listing-builder-comparison.png`
+- route: `http://127.0.0.1:5174/PTJ_Prototype/#/generation`
+- viewport: 1094 × 920
+- state: 批量生图 / 套图与详情图 / 自定义模板卡片 / 职责替换、排序与提交
+
+### Full-view comparison evidence
+
+- 已把修改前的详情图模板库与修改后的浏览器截图水平合并检查。新增“自定义”分类和“自定义详情图”卡片后，抽屉仍保持原来的两列网格、暖白底、橙色选中态、细边框、圆角、卡片高度和底部固定主按钮；没有新增页面或破坏原有三套预设。
+- 自定义卡片使用现有真实模板缩略图组成四宫格，未使用占位框、CSS 图形或无关素材；虚线边框与深色职责组合图标让入口醒目，但视觉权重不超过当前选中模板。
+- 套图模板库同步提供“自定义套图”，与四套现有套图并列；详情图模板库只展示三套 B2B 详情预设与一个自定义入口，类型没有串库。
+- 浏览器实测页面 `scrollWidth=1094`、`clientWidth=1094`，主页面与抽屉均无横向溢出。
+
+### Focused region comparison evidence
+
+- 已把现有“采购决策详情”的逐图详情页与新的“自定义详情图”编排器水平合并检查。两者沿用相同抽屉宽度、顶栏高度、返回/关闭按钮、橙色主按钮和两列图片卡片密度。
+- 编排器顶部先展示 6/6 或 8/8 完整度和生成顺序；已选职责卡保留真实缩略图、两位序号、标题、来源、上移、下移和删除，避免只靠文字列表导致顺序难以确认。
+- 下方职责库按来源预设分组，套图为 24 个可选职责，详情图为 24 个可选职责；满额时替代项降灰，移除一项后恢复可选，选择后的橙色边框和序号与现有模板选中态一致。
+
+### Required fidelity surfaces
+
+- 字体与排版：标题 18px、区块标题 10–12px、辅助文案 7–9px，复用现有紧凑抽屉层级；长构图说明使用两行截断，未挤压操作按钮。
+- 间距与布局节奏：选中顺序和职责库均为两列，卡片内图片、序号、文字和操作区对齐；底部提交按钮保持固定，不因职责库过长而滚出视口。
+- 颜色与视觉令牌：继续使用项目橙色、暖白、浅棕边框和绿色完成状态；未引入新的蓝紫主色或独立阴影系统。
+- 图片质量与资产保真：所有职责沿用现有模板登记的真实商品、场景、工厂、质检和包装素材，缩略图裁切清晰，没有拉伸、透明光晕或占位图。
+- 文案与内容：明确“只能选择当前类型”“顺序就是最终图片顺序”和固定 6/8 张；没有把自定义能力描述成任意 Prompt 编辑器。
+
+### Primary interaction verification
+
+- 套图：从标准商品套图预填 6 项，移除“商品主视觉”，加入企业实力模板的“企业总览”，上移后提交；摘要成功变为“自定义套图 · 6 张 / 版”。
+- 详情图：从采购决策详情预填 8 项，职责库只包含采购决策、OEM/ODM 和工厂履约三套详情模板；移除“产品介绍”，加入 OEM/ODM 的“Logo 与表面工艺”后提交；摘要成功变为“自定义详情图 · 8 张 / 版”。
+- 固定数量、满额禁用、移除后恢复选择、上移/下移边界禁用、抽屉返回与关闭均通过。
+- 浏览器无 React、TypeScript 或运行时错误；仅保留本地 FastAPI 未启动时既有的 Capabilities 静态快照降级警告，不影响本次交互，也不是本次改动回归。
+
+### Automated verification
+
+- 前端自动化测试：48 / 48 通过。
+- 后端自动化测试：52 / 52 通过。
+- TypeScript 检查与 Vite Production 构建：通过。
+
+### Findings and comparison history
+
+- 首次实现检查未发现可执行的 P0 / P1 / P2 视觉或核心交互问题，因此无需修复后重拍第二轮。
+- P3 后续可选：在职责数量继续增长时增加按职责关键词搜索；当前套图与详情图各 24 项，分组浏览已足够，不阻塞本次交付。
+
+final result: passed
+
+---
+
+## 2026-07-20 B2B 详情图八张结构与真实预览验收
+
+- source visual truth:
+  - `/var/folders/94/2dlbsm3968j4rqjll_d32qb40000gn/T/codex-clipboard-0f2d0cb3-47ce-4287-b8df-30017aec2ce4.png`
+  - `/var/folders/94/2dlbsm3968j4rqjll_d32qb40000gn/T/codex-clipboard-87d2708e-2696-4036-8af7-191849b05231.png`
+- previous UI baseline:
+  - `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/01-b2b-detail-template-current.png`
+- implementation screenshots:
+  - `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/detail-b2b-eight-template-library.png`
+  - `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/detail-b2b-eight-procurement-roles.png`
+  - `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/detail-b2b-eight-procurement-lightbox.png`
+  - `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/detail-b2b-eight-oem-roles.png`
+  - `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/detail-b2b-eight-fulfillment-roles.png`
+- route: `http://127.0.0.1:5174/PTJ_Prototype/#/generation`
+- state: 批量生图 / 详情图 / 三套模板库 / 逐张画面结构 / 大图预览
+
+### Full-view comparison evidence
+
+- 用户参考长图包含产品总览、产品矩阵、卖点、规格、材质、场景、定制、MOQ、工厂、质检、认证、包装、物流、合作流程和 FAQ 等十余个采购模块；压缩为 5 张会导致单张同时承担多个决策问题，信息密度和可读性均不足。
+- 用户确认 8 张已经足够。实现把需要 SKU、规格、MOQ、产能、证书数值的高交互模块合并或改写为产品介绍、结构使用、品质控制与合作流程，使用户仅凭商品图和少量补充文字即可生成。
+- 实现延续批图匠现有橙色、暖白、细边框和紧凑桌面抽屉，不把模板详情改造成独立页面；模板库直接标明“8 张详情图”，降低误选成本。
+- 三套模板各使用 8 张独立 ImageGen 原创商业摄影，共 24 张；预览图不含可读品牌、认证、规格数字或水印，避免将未知事实伪装成真实素材。
+
+### Template and interaction verification
+
+- 采购决策详情：产品总览、产品介绍、采购价值、结构使用、材质工艺、应用场景、品质控制、包装合作，共 8 张；旧的“产品矩阵与型号”和“关键规格参数”已确认不再出现。
+- OEM/ODM 定制详情：定制总览、产品开发、材质颜色、结构配件、Logo 工艺、包装说明、打样量产、品质交付，共 8 张。
+- 工厂履约详情：工厂团队、产线工艺、来料检验、过程品控、成品检验、检测能力、仓储装柜、项目履约，共 8 张。
+- 三套模板详情均实际渲染 8 张逐图卡片；每张包含独立真实图片、两位序号、职责标题和构图说明。浏览器实测三套图片 URL 均指向各自的 8 张专属素材。
+- 点击任一图片可打开大图弹窗；实测 `01 / 8` 可切换到 `02 / 8`，职责标题与构图说明同步变化，关闭后保持模板详情位置。
+- 详情图入口、每版摘要、总数和主按钮均同步为 8 张；后端 `listing_01`、三套视觉模板、Planner 角色绑定和最大 80 张单任务上限保持一致。
+
+### Visual findings
+
+- 模板库三张卡片在当前视口无横向溢出；详情页使用两列卡片提升浏览效率，较长职责和构图说明均可完整换行。
+- 大图预览使用居中单图、清晰序号和前后导航；不在缩略图阶段塞入大段文字，用户仍能逐张看到足够的信息结构。
+- 模板库在 1094px 视口下 `scrollWidth` 与 `clientWidth` 均为 1094px，无横向溢出。
+- 参考图与实现截图已在同一次视觉检查中并列查看；三套真实图片均逐张检查，无遗留 P0 / P1 / P2 视觉或核心交互问题。
+
+### Automated verification
+
+- 前端自动化测试：46 / 46 通过。
+- 后端自动化测试：48 / 48 通过。
+- TypeScript 检查、Vite Production 构建、lint 与 `git diff --check`：通过。
+
+final result: passed
+
+---
+
+## 2026-07-19 主图双图片输入验收
+
+- source visual truth: `/var/folders/94/2dlbsm3968j4rqjll_d32qb40000gn/T/codex-clipboard-4a4a5273-0bb6-4bba-a0d3-7a2520e9ab80.png`
+- mismatch baseline: `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/main-dual-image-input-final-connected.png`
+- implementation screenshot: `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/main-matched-upload-cards.png`
+- uploaded-state screenshot: `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/main-dual-image-input-uploaded.png`
+- route: `http://127.0.0.1:5173/PTJ_Prototype/#/generation`
+- viewport: 1094 × 920
+- state: 批量生图 / 主图 / PTJ-1 / 1:1 / 参考设计图与产品素材图空态及已上传态
+
+### Full-view comparison evidence
+
+- 已在同一次视觉检查中并列打开用户参考截图与实现截图；实现沿用参考稿“参考设计图在上、产品素材图在下”的信息顺序，并保持批图匠现有橙色、暖白、细边框和紧凑表单设计系统。
+- 最新标注要求两组图片区保持一致；已在同一次对照中并列检查修改前后截图。两张空态卡片现在使用同一组件骨架，浏览器实测宽度均为 334.7px、高度均为 146px，边框均为 1px、圆角均为 11px。
+- 参考截图是独立移动端卡片示意；实现将其压缩进现有桌面左栏，没有照搬过大的留白和字号。1094px 宽视口下文档 `scrollWidth` 与 `clientWidth` 均为 1094px，无横向滚动。
+- 套图仍保留“生图模板”；切换主图后模板区完全移除，双图片输入直接衔接四类图片标签，避免把套图模板误用到主图。
+
+### Focused region comparison evidence
+
+- 上方“参考设计图”最多 1 张，空态支持拖拽与点击；上传后显示真实缩略图、文件名、用途说明和移除按钮，点击缩略图可打开大图预览。
+- 下方“产品素材图”最多 6 张，采用和参考设计图相同的标题、计数、虚线上传区、边框与留白；支持点击、粘贴和拖拽，上传后显示独立缩略图，不与设计参考图混合计数。
+- 文字输入已从第二张图片卡片中拆出，成为独立的 500 字“补充要求（选填）”紧凑面板，只补充背景、场景、文案或必须保留细节。
+
+### Required fidelity surfaces
+
+- 字体与排版：标题、辅助文案、计数和按钮字号均复用现有表单层级；参考稿的两级标题关系被保留，但没有造成局部字号放大。
+- 间距与布局节奏：双图片区使用完全相同的 146px 卡片高度和 12px 间距；补充文字独立成块，真实生图参数仍位于同屏下方。
+- 颜色与视觉令牌：继续使用项目橙色主色、暖白背景、浅灰虚线与 12px 圆角；未引入新的蓝紫色或独立组件风格。
+- 图片质量与素材保真：浏览器使用项目内真实 JPEG 分别上传到两组输入，缩略图比例正确；预览弹窗显示原图，无占位图或 CSS 图形替代。
+- 文案与内容：明确“参考设计图”只参考构图/风格，“产品素材图”决定商品主体；避免使用鼓励复制品牌、文字或受保护元素的表述。
+
+### Findings and fixes
+
+1. [P2 已修复] 套图视觉模板原本在四种图片类型中共用，主图容易被误解为也受套图结构控制；现仅在套图显示。
+2. [P2 已修复] 单一商品参考图输入无法区分竞品风格图和自有产品图；现拆为独立请求字段，并在后端隔离商品分析。
+3. [P2 已修复] 参考稿原始卡片留白较大，直接照搬会挤出参数区；实现保留层级与操作但按现有左栏密度压缩。
+4. [P2 已修复] 首版把产品上传与文字输入合在一个面板，导致两组图片卡片外观和高度不一致；现改用同一骨架，并把文字说明独立下移。
+5. 无遗留 P0 / P1 / P2 问题。
+
+### Interaction verification
+
+- 主图 / 套图切换与模板显隐：通过。
+- 参考设计图单张上传、缩略图、大图预览、关闭与移除入口：通过。
+- 产品素材图多张上传、缩略图、粘贴/拖拽代码路径与移除入口：通过。
+- 两组图片独立计数（1/1 与 1/6）：通过。
+- 两张空态上传卡片同宽、同高、同边框和同圆角：通过。
+- 产品卡片内紧凑 Logo 入口打开与关闭：通过。
+- 本地 FastAPI Capabilities 联通后复验：通过；复验阶段没有新增浏览器 error 或 warning。
+- 1094 × 920 横向溢出检查：通过。
+- 前端自动化测试 45 项、后端自动化测试 46 项：通过。
+- TypeScript 检查、Vite Production 构建与 `git diff --check`：通过。
+
+final result: passed
+
+---
+
 ## 2026-07-16 真实生图后端原型验收
 
 - implementation screenshot: `/Users/garden/.codex/visualizations/2026/07/16/019f686c-fda5-7bf1-bbef-ccd5548bd10b/ptj-real-backend-prototype.png`
@@ -81,6 +246,57 @@
 ## Follow-up polish
 
 - 可在下一轮补充 760px 以下移动端的专门视觉稿；当前已具备基础响应式布局，但本次目标仅为桌面端。
+
+final result: passed
+
+---
+
+## 2026-07-18 紧凑 Logo 入口验收
+
+- source visual truth: `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/logo-before-d5f4789.png`
+- implementation screenshot: `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/logo-compact-final.png`
+- combined comparison: `/Users/garden/.codex/visualizations/2026/07/17/019f7076-f189-7d02-a4bf-5e8318256d23/logo-before-after-comparison.png`
+- route: `http://127.0.0.1:5173/PTJ_Prototype/#/generation`
+- viewport: 1280 × 720
+- state: 批量生图 / 套图 / Logo 浮层展开 / 已上传测试图 / 右上角
+
+### Full-view comparison evidence
+
+- 改动前后使用相同 1280 × 720 视口；顶部导航、左侧业务导航、表单宽度、模板区、商品图输入区和真实生图参数保持原布局。
+- 新入口位于“商品参考图”标题行右侧，以小尺寸橙色描边按钮显示；Logo 设置使用锚定浮层覆盖输入区，不新增常驻高度，也不推动下方表单。
+- 右侧结果区内容来自两个端口各自的本地历史数据，因此结果图片状态不同；本次对照范围聚焦未变的左侧表单与新增 Logo 交互。
+
+### Focused region comparison evidence
+
+- 标题行新增“添加 Logo”按钮；上传后按钮显示缩略图和“Logo 已添加”，仍保持单行高度。
+- 浮层宽度约 292px，包含 Logo 预览、文件名、大小、移除按钮和位置下拉框；在表单列内完整显示，无裁切、遮挡标题或横向溢出。
+- Logo 图片与商品参考图维持独立语义，不进入商品主体分析；仅作为最后一张品牌参考图传入生图请求。
+
+### Required fidelity surfaces
+
+- 字体与排版：沿用现有字号、字重和辅助文案层级，新增控件未出现局部放大或不一致的标签尺寸。
+- 间距与布局节奏：入口占用标题行剩余空间；浮层采用现有 12px 圆角、细边框和轻阴影，不增加页面纵向长度。
+- 颜色与视觉令牌：继续使用项目橙色主色、暖白背景和浅灰边框；选中态与已有按钮、标签一致。
+- 图片质量与素材保真：上传后展示真实缩略图；点击可打开大图预览，未使用占位资产或 CSS 图形替代。
+- 文案与内容：明确“品牌 Logo”“上传 1 张”“显示位置”“安全边距”，避免把 Logo 误解为商品参考图。
+
+### Findings and fixes
+
+1. [P2 已修复] 初次检查时仅上传 Logo 的页面底部仍显示通用参考图说明；已改为“Logo 会作为独立品牌参考传入，不会被当成商品主体”。
+2. [P2 已修复] 初次上传后紧凑按钮的可访问名称包含图片 alt；已将装饰缩略图从可访问名称中移除，按钮稳定显示“Logo 已添加”。
+3. 无遗留 P0 / P1 / P2 问题。
+
+### Interaction verification
+
+- 打开 / 关闭 Logo 设置浮层：通过。
+- 上传 Logo、显示缩略图和文件信息：通过。
+- 位置从默认右下角切换到右上角：通过。
+- 点击缩略图打开大图预览并关闭：通过。
+- 移除 Logo 后恢复上传空态，再次上传：通过。
+- 浏览器控制台：无 error。
+- 前端自动化测试：42 项通过。
+- 后端自动化测试：44 项通过。
+- ESLint、TypeScript 与 Vite 生产构建：通过。
 
 final result: passed
 

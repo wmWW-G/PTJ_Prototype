@@ -19,7 +19,16 @@ const imageTypeLabels: Record<ImageType, string> = {
 const resultRoleLabels: Record<ImageType, string[]> = {
   main: ["正面主视觉"],
   set: ["正面主视觉", "手柄细节", "杯口细节", "居家场景", "办公场景", "组合展示"],
-  listing: ["核心卖点", "材质细节", "工艺说明", "使用场景", "尺寸说明"],
+  listing: [
+    "产品定位总览",
+    "产品介绍",
+    "核心卖点",
+    "结构与使用",
+    "材质工艺",
+    "应用场景",
+    "品质控制",
+    "包装与合作",
+  ],
   poster: ["海报成图"],
 };
 

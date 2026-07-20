@@ -1,3 +1,5 @@
+import type { CustomVisualRoleSelection, LogoPosition } from "../tasks/types";
+
 /** 后端支持的真实图片模型。 */
 export type LiveImageModel =
   | "nano_banana_2"
@@ -65,6 +67,8 @@ export interface LiveGenerationRequest {
   image_type: "main" | "set" | "listing" | "poster";
   template_id: string;
   visual_template_id: string;
+  /** 自定义模板按最终生成顺序选择的职责来源。 */
+  custom_visual_roles?: CustomVisualRoleSelection[];
   model: LiveImageModel;
   aspect_ratio: string;
   resolution: "512" | "1K" | "2K" | "4K";
@@ -73,7 +77,14 @@ export interface LiveGenerationRequest {
   variant_count: number;
   user_requirement: string;
   supplemental_info: Record<string, string>;
+  /** 只用于学习构图、光线和视觉风格，不得作为商品主体分析。 */
+  style_reference_assets?: ReferenceAssetPayload[];
+  /** 用户自己的产品素材，决定成图中的商品外观与结构。 */
   reference_assets: ReferenceAssetPayload[];
+  /** 与商品参考图分开的品牌 Logo，避免商品分析把 Logo 当成商品主体。 */
+  logo_asset?: ReferenceAssetPayload;
+  /** Logo 的构图位置；只有 logo_asset 存在时才会被后端执行。 */
+  logo_position?: LogoPosition;
 }
 
 /** NDJSON 中的统一事件；未知 type 会被前端安全忽略。 */
@@ -124,12 +135,16 @@ export interface VisualTemplateFieldCapability {
 /** 控制整套预期风格、信息密度和动态字段的视觉模板。 */
 export interface VisualTemplateCapability {
   id: string;
+  /** 模板适用的图片业务类型；旧后端未返回时前端按套图模板处理。 */
+  image_types?: Array<"main" | "set" | "listing" | "poster">;
   name: string;
   category: string;
   description: string;
   art_direction: string;
   information_focus: string[];
   role_highlights: string[];
+  /** 每张预览图对应的构图和信息说明；与 role_highlights 按索引一一对应。 */
+  role_compositions?: string[];
   preview_images: string[];
   fields: VisualTemplateFieldCapability[];
 }

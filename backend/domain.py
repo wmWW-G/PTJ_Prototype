@@ -105,6 +105,15 @@ class ReferenceAsset(BaseModel):
     filename: str = Field(min_length=1, max_length=255)
 
 
+LogoPosition = Literal[
+    "top-left",
+    "top-right",
+    "bottom-left",
+    "bottom-right",
+    "center",
+]
+
+
 class BinaryAsset(BaseModel):
     """下载后可直接发送给图片模型的二进制图片。"""
 
@@ -146,16 +155,32 @@ class VisualTemplateDefinition(BaseModel):
     """控制整套图片风格和信息密度的视觉模板。"""
 
     id: str = Field(min_length=1, max_length=64)
+    # 同一个视觉模板只能出现在适合的业务类型中。例如详情图模板不能混入
+    # 六张套图选择器，否则 Planner 会收到错误数量的职责定义。
+    image_types: list[ImageType] = Field(min_length=1, max_length=4)
     name: str = Field(min_length=1, max_length=40)
     category: str = Field(min_length=1, max_length=24)
     description: str = Field(min_length=1, max_length=160)
     art_direction: str = Field(min_length=1, max_length=600)
     information_focus: list[str] = Field(default_factory=list, max_length=12)
-    role_highlights: list[str] = Field(default_factory=list, max_length=8)
-    role_compositions: list[str] = Field(default_factory=list, max_length=8)
+    # B2B 详情页当前以八张图覆盖产品、使用、品质与合作链路；保留到 12
+    # 的结构余量，方便以后增加行业专属角色，而不改变现有模板的默认数量。
+    role_highlights: list[str] = Field(default_factory=list, max_length=12)
+    role_compositions: list[str] = Field(default_factory=list, max_length=12)
     generated_anchor_strategy: Literal["reuse", "independent"] = "reuse"
-    preview_images: list[str] = Field(default_factory=list, max_length=6)
+    preview_images: list[str] = Field(default_factory=list, max_length=12)
     fields: list[VisualTemplateField] = Field(default_factory=list, max_length=16)
+
+
+class CustomVisualRoleSelection(BaseModel):
+    """用户从同类预设模板中挑选的一条图片职责。
+
+    只保存来源模板和职责下标，不允许前端直接提交任意 Prompt。后端会根据
+    已登记模板重新读取标题、构图、预览图和选填字段，避免跨类型混用或注入。
+    """
+
+    template_id: str = Field(min_length=1, max_length=64)
+    role_index: int = Field(ge=0, le=11)
 
 
 class ProductContext(BaseModel):
@@ -223,7 +248,19 @@ class GenerationRequest(BaseModel):
     variant_count: int = Field(default=1, ge=1, le=10)
     user_requirement: str = Field(min_length=1, max_length=4000)
     supplemental_info: dict[str, str] = Field(default_factory=dict)
+    # 自定义模板只提交“来源模板 + 职责下标”。真实标题和构图由服务器登记表恢复，
+    # 因而前端不能借此把任意文字注入视觉模板定义。
+    custom_visual_roles: list[CustomVisualRoleSelection] = Field(
+        default_factory=list,
+        max_length=12,
+    )
+    # 参考设计图只负责构图与风格，不参与商品主体分析。
+    style_reference_assets: list[ReferenceAsset] = Field(default_factory=list, max_length=3)
+    # 用户自己的产品素材决定商品真实外观与结构。
     reference_assets: list[ReferenceAsset] = Field(default_factory=list, max_length=10)
+    # Logo 与商品参考图分开，避免 Planner 把纯品牌图形当成商品主体。
+    logo_asset: ReferenceAsset | None = None
+    logo_position: LogoPosition = "bottom-right"
 
     @field_validator("supplemental_info")
     @classmethod
@@ -253,10 +290,33 @@ class GenerationRequest(BaseModel):
             normalized[clean_key] = clean_value
         return normalized
 
+    @field_validator("custom_visual_roles")
+    @classmethod
+    def validate_custom_visual_roles(
+        cls,
+        value: list[CustomVisualRoleSelection],
+    ) -> list[CustomVisualRoleSelection]:
+        """拒绝重复职责，保证用户选择顺序可以稳定映射到生成槽位。
+
+        Args:
+            value: 前端按最终顺序提交的职责来源列表。
+
+        Returns:
+            原顺序不变的职责列表。
+
+        Raises:
+            ValueError: 同一模板的同一职责被重复选择时抛出。
+        """
+
+        role_keys = [(item.template_id, item.role_index) for item in value]
+        if len(role_keys) != len(set(role_keys)):
+            raise ValueError("自定义模板不能重复选择同一职责")
+        return value
+
     @model_validator(mode="before")
     @classmethod
     def infer_reference_mode(cls, value: Any) -> Any:
-        """根据参考图是否存在自动确定文生图或图生图模式。
+        """根据设计参考图、产品素材或 Logo 是否存在自动确定生图模式。
 
         Args:
             value: Pydantic 尚未构造模型前收到的原始请求对象。
@@ -277,7 +337,13 @@ class GenerationRequest(BaseModel):
         if normalized.get("model") == "gpt_image_2_azure":
             normalized["model"] = "gpt_image_2_openrouter"
         normalized["mode"] = (
-            "image-to-image" if normalized.get("reference_assets") else "text-to-image"
+            "image-to-image"
+            if (
+                normalized.get("style_reference_assets")
+                or normalized.get("reference_assets")
+                or normalized.get("logo_asset")
+            )
+            else "text-to-image"
         )
         return normalized
 

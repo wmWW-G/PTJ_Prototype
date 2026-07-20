@@ -33,6 +33,10 @@ class Settings:
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     )
+    # Vite 在默认端口被占用时会自动顺延。仅放行本机回环地址的任意端口，
+    # 既避免 5174、5175 等开发端口全部报 ``Failed to fetch``，也不会把
+    # 生产 API 的跨域权限扩大到其他公网域名。
+    allowed_origin_regex: str = r"^http://(?:localhost|127\.0\.0\.1):\d+$"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -79,6 +83,10 @@ class Settings:
             blob_read_write_token=os.getenv("BLOB_READ_WRITE_TOKEN", "").strip(),
             blob_allowed_host=os.getenv("BLOB_ALLOWED_HOST", "").strip().lower(),
             allowed_origins=origins,
+            allowed_origin_regex=os.getenv(
+                "ALLOWED_ORIGIN_REGEX",
+                r"^http://(?:localhost|127\.0\.0\.1):\d+$",
+            ).strip(),
         )
 
     def missing_configuration(self) -> list[str]:

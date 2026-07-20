@@ -7,10 +7,10 @@ from backend.templates import get_template
 
 
 def test_default_template_counts() -> None:
-    """四种默认模板必须保持已确认的 6、5、1、1 槽位数量。"""
+    """四种默认模板必须保持已确认的 6、8、1、1 槽位数量。"""
 
     assert len(get_template("product_set_01").slots) == 6
-    assert len(get_template("listing_01").slots) == 5
+    assert len(get_template("listing_01").slots) == 8
     assert len(get_template("main_01").slots) == 1
     assert len(get_template("poster_01").slots) == 1
 
@@ -27,4 +27,3 @@ def test_unknown_template_is_rejected() -> None:
 
     with pytest.raises(UnsupportedTemplateError):
         get_template("missing-template")
-
