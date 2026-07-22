@@ -13,7 +13,9 @@ import type {
 } from "../tasks/types";
 import {
   fetchGenerationCapabilities,
+  refineGenerationPrompt,
   streamGeneration,
+  streamPromptPlanning,
   uploadReference,
 } from "./api";
 import {
@@ -23,6 +25,7 @@ import {
 } from "./config";
 import { GenerationResultsPanel } from "./components/GenerationResultsPanel";
 import { LiveResultsPanel } from "./components/LiveResultsPanel";
+import { PromptReviewPanel } from "./components/PromptReviewPanel";
 import {
   DEFAULT_MODEL_CAPABILITIES,
   ModelControls,
@@ -37,8 +40,11 @@ import {
 import { createInitialLiveState, reduceGenerationEvent } from "./liveState";
 import type {
   GenerationCapabilities,
+  LiveGenerationRequest,
   LiveGenerationState,
   LiveImageModel,
+  PlannedImagePrompt,
+  PromptPlanPayload,
 } from "./liveTypes";
 import styles from "./GenerationPage.module.css";
 
@@ -161,6 +167,13 @@ interface GenerationPageProps {
   mode: GenerationPageMode;
 }
 
+/** 用户确认 Prompt 前保存在内存中的请求快照。 */
+interface PromptReviewDraft {
+  request: LiveGenerationRequest;
+  plans: PromptPlanPayload[];
+  task: GenerationTask;
+}
+
 /**
  * 批图匠统一生成工作区。
  *
@@ -197,8 +210,11 @@ export function GenerationPage({ mode }: GenerationPageProps) {
   const [garmentImages, setGarmentImages] = useState<string[]>([]);
   const [modelImages, setModelImages] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isPlanningPrompts, setIsPlanningPrompts] = useState(false);
   const [liveState, setLiveState] = useState<LiveGenerationState>(createInitialLiveState);
   const [liveError, setLiveError] = useState("");
+  const [promptReview, setPromptReview] = useState<PromptReviewDraft | null>(null);
+  const [activeExpectedCount, setActiveExpectedCount] = useState(0);
   const [capabilities, setCapabilities] = useState<GenerationCapabilities | null>(null);
   // 套图和详情图维护各自的模板选择，用户来回切换图片类型时不会互相覆盖。
   const [visualTemplateIds, setVisualTemplateIds] = useState<Record<TemplatedImageType, string>>({
@@ -263,6 +279,8 @@ export function GenerationPage({ mode }: GenerationPageProps) {
     setTasks(listTasks().filter((task) => taskBelongsToPage(task, mode)));
     setLiveState(createInitialLiveState());
     setLiveError("");
+    setPromptReview(null);
+    setActiveExpectedCount(0);
   }, [mode]);
 
   /** 真实页面启动后读取服务器能力；失败只影响提示，不切换到 Mock。 */
@@ -324,12 +342,15 @@ export function GenerationPage({ mode }: GenerationPageProps) {
   }
 
   /**
-   * 上传参考图、提交真实任务并持续保存逐张结果。
+   * 上传参考图并只让文本 LLM 规划逐张 Prompt。
    *
-   * @returns Promise 在 NDJSON 流结束或请求失败时完成。
-   * @throws 不向 React 事件层抛出；错误会写入实时面板和历史任务。
+   * 此阶段不会保存历史任务，也不会把请求交给图片模型。所有上传资产、参数和
+   * Prompt 计划会作为同一份内存快照，等待用户确认后再执行。
+   *
+   * @returns Promise 在 Prompt 计划完成或错误已展示后结束。
+   * @throws 不向 React 事件层抛出；错误会写入表单和右侧规划状态。
    */
-  async function handleLiveGenerate(): Promise<void> {
+  async function handlePromptPlanning(): Promise<void> {
     if (isGenerating) return;
     if (mode !== "generate") return;
     const typedRequirement = prompt.trim();
@@ -346,35 +367,12 @@ export function GenerationPage({ mode }: GenerationPageProps) {
     );
 
     setIsGenerating(true);
+    setIsPlanningPrompts(true);
     setLiveError("");
-    let latestState = createInitialLiveState();
-    setLiveState(latestState);
+    setPromptReview(null);
+    setLiveState({ ...createInitialLiveState(), status: "planning" });
     const controller = new AbortController();
     generationAbortRef.current = controller;
-    let task = createMockTask({
-      // 任务历史仍保留最终业务模式，便于结果详情说明本次是否使用了参考图。
-      mode: activeGenerationMode,
-      imageType,
-      prompt: requirement,
-      model: modelValue.model,
-      aspectRatio: modelValue.aspectRatio,
-      templateId,
-      visualTemplateId,
-      customVisualRoles: visualTemplateId.startsWith("custom_")
-        ? activeCustomVisualRoles
-        : [],
-      supplementalInfo,
-      resolution: modelValue.resolution,
-      quality: modelValue.quality,
-      quantity,
-      variantCount: quantity,
-      styleImages: imageType === "main" ? styleImages : [],
-      sourceImages,
-      logoImage: editingTask?.logoImage,
-      logoPosition,
-    });
-    saveTask(task);
-    refreshTasks();
 
     try {
       // 每张参考图单独上传，避免一次 multipart 请求越过 Vercel 4.5 MB 限制。
@@ -391,39 +389,167 @@ export function GenerationPage({ mode }: GenerationPageProps) {
       const logoAsset = logoFile
         ? await uploadReference(logoFile, controller.signal)
         : undefined;
-      task = {
-        ...task,
+      const task = createMockTask({
+        // 历史任务仍保留最终业务模式，但只有用户确认并开始生图后才真正保存。
+        mode: activeGenerationMode,
+        imageType,
+        prompt: requirement,
+        model: modelValue.model,
+        aspectRatio: modelValue.aspectRatio,
+        templateId,
+        visualTemplateId,
+        customVisualRoles: visualTemplateId.startsWith("custom_")
+          ? activeCustomVisualRoles
+          : [],
+        supplementalInfo,
+        resolution: modelValue.resolution,
+        quality: modelValue.quality,
+        quantity,
+        variantCount: quantity,
         styleImages: styleReferenceAssets.map((asset) => asset.url),
         sourceImages: referenceAssets.map((asset) => asset.url),
         logoImage: logoAsset?.url,
         logoPosition,
+      });
+      const request: LiveGenerationRequest = {
+        image_type: imageType,
+        template_id: templateId,
+        visual_template_id: visualTemplateId,
+        custom_visual_roles: visualTemplateId.startsWith("custom_")
+          ? activeCustomVisualRoles
+          : [],
+        model: modelValue.model,
+        aspect_ratio: modelValue.aspectRatio,
+        resolution: modelValue.resolution,
+        quality:
+          modelValue.model === "gpt_image_2_openrouter"
+            ? modelValue.quality
+            : undefined,
+        language: "zh-CN",
+        variant_count: quantity,
+        user_requirement: requirement,
+        supplemental_info: supplementalInfo,
+        style_reference_assets: styleReferenceAssets,
+        reference_assets: referenceAssets,
+        logo_asset: logoAsset,
+        logo_position: logoAsset ? logoPosition : undefined,
       };
-      saveTask(task);
+      const plansByVariant: Record<number, PromptPlanPayload> = {};
+      let planningFailure = "";
 
-      await streamGeneration(
-        {
-          image_type: imageType,
-          template_id: templateId,
-          visual_template_id: visualTemplateId,
-          custom_visual_roles: visualTemplateId.startsWith("custom_")
-            ? activeCustomVisualRoles
-            : [],
-          model: modelValue.model,
-          aspect_ratio: modelValue.aspectRatio,
-          resolution: modelValue.resolution,
-          quality:
-            modelValue.model === "gpt_image_2_openrouter"
-              ? modelValue.quality
-              : undefined,
-          language: "zh-CN",
-          variant_count: quantity,
-          user_requirement: requirement,
-          supplemental_info: supplementalInfo,
-          style_reference_assets: styleReferenceAssets,
-          reference_assets: referenceAssets,
-          logo_asset: logoAsset,
-          logo_position: logoAsset ? logoPosition : undefined,
+      await streamPromptPlanning(
+        { ...request, planning_only: true },
+        (event) => {
+          if (event.type === "plan_ready" && event.variant_index) {
+            const nextPlan = event.data?.plan as PromptPlanPayload | undefined;
+            if (nextPlan) plansByVariant[event.variant_index] = nextPlan;
+          }
+          if (event.type === "job_failed") {
+            planningFailure = event.message || "Prompt 规划失败";
+          }
         },
+        controller.signal,
+      );
+      if (planningFailure) throw new Error(planningFailure);
+      const plans = Object.entries(plansByVariant)
+        .sort(([left], [right]) => Number(left) - Number(right))
+        .map(([, plan]) => plan);
+      if (plans.length !== quantity) {
+        throw new Error("Prompt 规划已结束，但返回的方案数量不完整");
+      }
+      setPromptReview({ request, plans, task });
+      setLiveState(createInitialLiveState());
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      const message = error instanceof Error ? error.message : "Prompt 规划失败";
+      console.error("[批图匠] Prompt 规划失败", error);
+      setLiveError(message);
+      setLiveState({ ...createInitialLiveState(), status: "failed", message });
+    } finally {
+      if (!controller.signal.aborted) {
+        setIsGenerating(false);
+        setIsPlanningPrompts(false);
+      }
+      if (generationAbortRef.current === controller) generationAbortRef.current = null;
+    }
+  }
+
+  /**
+   * 根据用户意见只优化当前方案中的一张 Prompt。
+   *
+   * @param variantIndex Prompt 所在方案的 1-based 序号。
+   * @param imagePrompt 当前单张 Prompt。
+   * @param feedback 用户输入的具体改进意见。
+   * @returns Promise 在新 Prompt 写回审核面板后完成。
+   * @throws 后端或网络错误会继续抛给审核组件展示。
+   */
+  async function handleRefinePrompt(
+    variantIndex: number,
+    imagePrompt: PlannedImagePrompt,
+    feedback: string,
+  ): Promise<void> {
+    const draft = promptReview;
+    const plan = draft?.plans[variantIndex - 1];
+    if (!draft || !plan) throw new Error("当前 Prompt 方案已经失效，请重新生成");
+
+    const controller = new AbortController();
+    generationAbortRef.current = controller;
+    try {
+      const refinedPrompt = await refineGenerationPrompt({
+        image_prompt: imagePrompt,
+        global_consistency_prompt: plan.global_consistency_prompt,
+        user_requirement: draft.request.user_requirement,
+        feedback,
+        language: draft.request.language ?? "zh-CN",
+        target_model: draft.request.model,
+      }, controller.signal);
+      setPromptReview((current) => {
+        if (!current) return current;
+        const plans = current.plans.map((currentPlan, planIndex) => (
+          planIndex === variantIndex - 1
+            ? {
+                ...currentPlan,
+                image_prompts: currentPlan.image_prompts.map((currentPrompt) => (
+                  currentPrompt.index === imagePrompt.index ? refinedPrompt : currentPrompt
+                )),
+              }
+            : currentPlan
+        ));
+        return { ...current, plans };
+      });
+    } finally {
+      if (generationAbortRef.current === controller) generationAbortRef.current = null;
+    }
+  }
+
+  /**
+   * 使用用户确认后的 Prompt 启动真实图片任务，并持续保存逐张结果。
+   *
+   * @returns Promise 在 NDJSON 图片流结束或错误已持久化后完成。
+   * @throws 不向 React 事件层抛出；错误会写入实时面板和历史任务。
+   */
+  async function handleConfirmedGeneration(): Promise<void> {
+    const draft = promptReview;
+    if (!draft || isGenerating || mode !== "generate") return;
+
+    setPromptReview(null);
+    setIsGenerating(true);
+    setIsPlanningPrompts(false);
+    setLiveError("");
+    setActiveExpectedCount(
+      draft.plans.reduce((total, plan) => total + plan.image_prompts.length, 0),
+    );
+    let latestState = createInitialLiveState();
+    setLiveState(latestState);
+    const controller = new AbortController();
+    generationAbortRef.current = controller;
+    let task: GenerationTask = { ...draft.task, status: "generating" };
+    saveTask(task);
+    refreshTasks();
+
+    try {
+      await streamGeneration(
+        { ...draft.request, confirmed_plans: draft.plans },
         (event) => {
           latestState = reduceGenerationEvent(latestState, event);
           setLiveState(latestState);
@@ -441,13 +567,13 @@ export function GenerationPage({ mode }: GenerationPageProps) {
             latestState.status === "failed"
               ? latestState.status
               : "generating";
+          const liveImages = flattenLiveImages(latestState);
           task = {
             ...task,
             status: taskStatus,
             resultImages: latestState.resultImages,
-            liveImages: flattenLiveImages(latestState),
-            actualSize: flattenLiveImages(latestState).find((image) => image.actualSize)
-              ?.actualSize,
+            liveImages,
+            actualSize: liveImages.find((image) => image.actualSize)?.actualSize,
             providerMetadata: { jobId: latestState.jobId },
           };
           saveTask(task);
@@ -472,7 +598,7 @@ export function GenerationPage({ mode }: GenerationPageProps) {
 
   /** 根据页面模式调用真实后端或保留的 Mock 能力。 */
   function handleGenerate() {
-    if (isLiveMode) void handleLiveGenerate();
+    if (isLiveMode) void handlePromptPlanning();
     else handleMockGenerate();
   }
 
@@ -638,15 +764,13 @@ export function GenerationPage({ mode }: GenerationPageProps) {
 
           {liveError && <p className={styles.submitError} role="alert">{liveError}</p>}
           <button className={styles.generateButton} type="button" disabled={isGenerating} onClick={handleGenerate}>
-            {isGenerating ? <><span className={styles.spinner} />正在处理 {plannedOutputCount} 张图片</> : <><Play size={17} fill="currentColor" />开始生成 {isLiveMode ? `${plannedOutputCount} 张` : ""}</>}
+            {isGenerating
+              ? <><span className={styles.spinner} />{isPlanningPrompts ? "正在生成 Prompt" : `正在处理 ${plannedOutputCount} 张图片`}</>
+              : <><Play size={17} fill="currentColor" />{isLiveMode ? (promptReview ? "重新生成 Prompt" : "生成 Prompt") : "开始生成"}</>}
           </button>
           <p className={styles.creditHint}>
             {isLiveMode
-              ? logoFile && sourceFiles.length === 0
-                ? "Logo 会作为独立品牌参考传入，不会被当成商品主体。"
-                : activeGenerationMode === "image-to-image"
-                ? "原始参考图会被所有槽位复用；图片之间不会串联漂移。"
-                : "无图模式先生成基准图 1，再并发生成同版其余图片。"
+              ? "先确认逐张 Prompt；确认后才开始真实生图并消耗图片额度。"
               : `预计消耗 ${plannedOutputCount} 张图额度`}
           </p>
         </section>
@@ -661,10 +785,24 @@ export function GenerationPage({ mode }: GenerationPageProps) {
       </div>
 
       {hasInlineResults && (
-        liveState.status === "idle" ? (
+        promptReview ? (
+          <PromptReviewPanel
+            plans={promptReview.plans}
+            expectedCount={promptReview.plans.reduce(
+              (total, plan) => total + plan.image_prompts.length,
+              0,
+            )}
+            isStarting={isGenerating}
+            onRefine={handleRefinePrompt}
+            onConfirm={() => void handleConfirmedGeneration()}
+          />
+        ) : liveState.status === "idle" ? (
           <GenerationResultsPanel tasks={tasks} />
         ) : (
-          <LiveResultsPanel state={liveState} expectedCount={plannedOutputCount} />
+          <LiveResultsPanel
+            state={liveState}
+            expectedCount={activeExpectedCount || plannedOutputCount}
+          />
         )
       )}
     </div>

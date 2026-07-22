@@ -1,11 +1,18 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { generateCustomTemplateImage } from "../api";
 import {
   DEFAULT_VISUAL_TEMPLATES,
   VisualTemplatePicker,
 } from "./VisualTemplatePicker";
+
+vi.mock("../api", () => ({
+  generateCustomTemplateImage: vi.fn(),
+}));
+
+const generateCustomTemplateImageMock = vi.mocked(generateCustomTemplateImage);
 
 /**
  * 为受控组件提供真实状态，确保测试覆盖用户完整交互而非只检查静态文本。
@@ -31,6 +38,10 @@ function ControlledPicker() {
 }
 
 describe("VisualTemplatePicker", () => {
+  beforeEach(() => {
+    generateCustomTemplateImageMock.mockReset();
+  });
+
   it("通过右侧抽屉切换模板并显示该模板的预期结构", async () => {
     const user = userEvent.setup();
     render(<ControlledPicker />);
@@ -155,30 +166,46 @@ describe("VisualTemplatePicker", () => {
     expect(screen.getByText("工厂履约详情")).toBeInTheDocument();
   });
 
-  it("套图可从现有套图职责中选满 6 张并调整顺序", async () => {
+  it("套图通过大抽屉完成单图 AI 修改、采用与保存模板", async () => {
     const user = userEvent.setup();
+    generateCustomTemplateImageMock.mockResolvedValueOnce("https://images.example.com/generated-slot-4.png");
     render(<ControlledPicker />);
 
     await user.click(screen.getByRole("button", { name: "更换模板" }));
     expect(screen.getByRole("button", { name: "配置自定义套图" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "配置自定义套图" }));
 
-    // 首次进入时沿用当前预设的六个职责，用户可以逐项替换，不必从空白开始。
-    expect(screen.getByText("6/6")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "移除商品主视觉" }));
-    expect(screen.getByText("5/6")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "选择职责：企业总览，来自企业实力套图" }));
-    expect(screen.getByText("6/6")).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "选择生图模板" });
+    expect(within(dialog).getByText("AI 已经排好整套结构")).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("button", { name: /修改第/ })).toHaveLength(6);
 
-    // 顺序控制位于已选职责区，调整后的数组会作为最终六张图的生成顺序提交。
-    await user.click(screen.getByRole("button", { name: "上移企业总览" }));
-    await user.click(screen.getByRole("button", { name: "使用自定义套图" }));
+    // 点击第四张后只保留原图、新版本和一句话修改框，不再要求用户手写营销文案。
+    await user.click(within(dialog).getByRole("button", { name: "修改第 4 张：Logo 工艺展示" }));
+    expect(within(dialog).getByRole("heading", { name: "第 4 张 · Logo 工艺展示" })).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("告诉 AI 怎么修改这一张")).toHaveValue(
+      "增加四种 Logo 工艺展示，整体更专业，文案由 AI 生成",
+    );
+    expect(within(dialog).getByRole("button", { name: /保存为我的模板/ })).toBeDisabled();
+
+    // 真实生成完成后才允许采用候选图，并继续保存个人模板。
+    await user.click(within(dialog).getByRole("button", { name: "重新生成" }));
+    expect(await within(dialog).findByText("GPT-Image-2 已生成新版本")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "采用这张" }));
+    expect(within(dialog).getByText("已采用；模板特征提取与持久化当前仍为原型状态")).toBeInTheDocument();
+    const saveButton = within(dialog).getByRole("button", { name: "保存为我的模板" });
+    expect(saveButton).toBeEnabled();
+    await user.click(saveButton);
+    expect(within(dialog).getByRole("button", { name: "已保存到我的模板" })).toBeDisabled();
+
+    await user.click(within(dialog).getByRole("button", { name: "返回整套" }));
+    expect(within(dialog).getByText("已采用 AI 新版本")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "使用这套模板" }));
     expect(screen.queryByRole("dialog", { name: "选择生图模板" })).not.toBeInTheDocument();
     expect(screen.getByText("自定义套图")).toBeInTheDocument();
     expect(screen.getByText("6 张 / 版")).toBeInTheDocument();
   });
 
-  it("详情图自定义职责库只包含现有详情图模板并固定为 8 张", async () => {
+  it("详情图自定义入口保持 8 个可独立修改的图片槽位", async () => {
     const user = userEvent.setup();
 
     function CustomListingPicker() {
@@ -202,10 +229,80 @@ describe("VisualTemplatePicker", () => {
     await user.click(screen.getByRole("button", { name: "更换模板" }));
     await user.click(screen.getByRole("button", { name: "配置自定义详情图" }));
 
-    expect(screen.getByText("8/8")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "采购决策详情" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "OEM/ODM 定制详情" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "工厂履约详情" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "企业实力套图" })).not.toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "选择生图模板" });
+    expect(within(dialog).getByText("8 张 / 版")).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("button", { name: /修改第/ })).toHaveLength(8);
+    expect(within(dialog).queryByRole("button", { name: /选择职责/ })).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "修改第 8 张：包装与合作" }));
+    expect(within(dialog).getByRole("heading", { name: "第 8 张 · 包装与合作" })).toBeInTheDocument();
+  });
+
+  it("自定义单图允许附图加文字，并展示 GPT-Image-2 的真实结果", async () => {
+    const user = userEvent.setup();
+    generateCustomTemplateImageMock.mockResolvedValueOnce("https://images.example.com/custom-result.png");
+    render(<ControlledPicker />);
+
+    await user.click(screen.getByRole("button", { name: "更换模板" }));
+    await user.click(screen.getByRole("button", { name: "配置自定义套图" }));
+    const dialog = screen.getByRole("dialog", { name: "选择生图模板" });
+    await user.click(within(dialog).getByRole("button", { name: "修改第 4 张：Logo 工艺展示" }));
+
+    const instructionInput = within(dialog).getByLabelText("告诉 AI 怎么修改这一张");
+    await user.clear(instructionInput);
+    await user.type(instructionInput, "保留帽子主体，增加四种 Logo 工艺");
+    const referenceFile = new File(["cap"], "cap.jpg", { type: "image/jpeg" });
+    await user.upload(within(dialog).getByLabelText("附加参考图"), referenceFile);
+    await user.click(within(dialog).getByRole("button", { name: "重新生成" }));
+
+    await waitFor(() => expect(generateCustomTemplateImageMock).toHaveBeenCalledWith(expect.objectContaining({
+      instruction: "保留帽子主体，增加四种 Logo 工艺",
+      referenceFile,
+    })));
+    expect(await within(dialog).findByAltText("AI 生成的新版本")).toHaveAttribute(
+      "src",
+      "https://images.example.com/custom-result.png",
+    );
+    expect(within(dialog).getByText("GPT-Image-2 · 低")).toBeInTheDocument();
+  });
+
+  it("附加参考图只作为生图输入，不覆盖左侧正在修改的原图", async () => {
+    const user = userEvent.setup();
+    render(<ControlledPicker />);
+
+    await user.click(screen.getByRole("button", { name: "更换模板" }));
+    await user.click(screen.getByRole("button", { name: "配置自定义套图" }));
+    const dialog = screen.getByRole("dialog", { name: "选择生图模板" });
+    await user.click(within(dialog).getByRole("button", { name: "修改第 1 张：商品主视觉" }));
+    const referenceFile = new File(["cow"], "牛1.jpg", { type: "image/jpeg" });
+    await user.upload(within(dialog).getByLabelText("附加参考图"), referenceFile);
+
+    expect(within(dialog).getByText("原图")).toBeInTheDocument();
+    expect(within(dialog).getByAltText("修改前的原图")).toHaveAttribute(
+      "src",
+      expect.stringContaining("cap-product-overview.jpg"),
+    );
+    expect(within(dialog).getByText("牛1.jpg")).toBeInTheDocument();
+  });
+
+  it("可以直接在自然语言修改框粘贴一张图片", async () => {
+    const user = userEvent.setup();
+    render(<ControlledPicker />);
+
+    await user.click(screen.getByRole("button", { name: "更换模板" }));
+    await user.click(screen.getByRole("button", { name: "配置自定义套图" }));
+    const dialog = screen.getByRole("dialog", { name: "选择生图模板" });
+    await user.click(within(dialog).getByRole("button", { name: "修改第 2 张：结构细节" }));
+    const pastedFile = new File(["pasted-image"], "粘贴的参考图.png", { type: "image/png" });
+
+    fireEvent.paste(within(dialog).getByLabelText("告诉 AI 怎么修改这一张"), {
+      clipboardData: {
+        files: [pastedFile],
+        items: [{ kind: "file", type: "image/png", getAsFile: () => pastedFile }],
+      },
+    });
+
+    expect(within(dialog).getByText("粘贴的参考图.png")).toBeInTheDocument();
+    expect(within(dialog).getByText("已附图")).toBeInTheDocument();
   });
 });

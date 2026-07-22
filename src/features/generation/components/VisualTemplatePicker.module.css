@@ -30,6 +30,7 @@
 .backdrop { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; background: rgb(37 31 27 / 32%); backdrop-filter: blur(2px); }
 .drawer { position: absolute; top: 0; right: 0; width: min(520px, 92vw); height: 100%; display: grid; grid-template-rows: auto auto 1fr auto; overflow: hidden; background: white; box-shadow: -18px 0 48px rgb(39 31 24 / 18%); animation: drawerIn .22s cubic-bezier(.22, 1, .36, 1); }
 .detailDrawer { grid-template-rows: auto minmax(0, 1fr) auto; }
+.customEditDrawer { width: min(1180px, 86vw); }
 @keyframes drawerIn { from { transform: translateX(26px); opacity: .7; } }
 .drawer > header { min-height: 86px; display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 22px 22px 16px; border-bottom: 1px solid var(--line); }
 .drawer > header > div { display: grid; gap: 6px; }
@@ -40,6 +41,12 @@
 .detailHeader > button { margin-top: 1px; }
 .detailHeader > div { min-width: 0; display: grid; gap: 5px; }
 .detailHeader h2 { margin: 0; color: var(--ink-950); font-size: 18px; line-height: 1.25; letter-spacing: -.02em; }
+.customEditorHeader { min-width: 0; display: grid !important; grid-template-columns: auto minmax(0, 1fr); align-items: center; flex: 1; gap: 12px !important; }
+.customEditorHeader > button { width: auto !important; display: flex !important; align-items: center; gap: 5px; padding: 0 9px !important; font-size: 10px; }
+.customEditorHeader > div { min-width: 0; display: grid; justify-items: center; gap: 5px; text-align: center; }
+.customEditorHeader h2 { margin: 0; color: var(--ink-950); font-size: 18px; line-height: 1.25; letter-spacing: -.02em; }
+.customEditorHeader span { display: flex; align-items: center; gap: 5px; color: var(--ink-500); }
+.customEditorHeader span svg { color: var(--brand-600); }
 
 .categoryTabs { display: flex; gap: 7px; overflow-x: auto; padding: 14px 22px 10px; }
 .categoryTabs button { height: 30px; flex: none; padding: 0 11px; border: 1px solid var(--line); border-radius: 16px; color: var(--ink-600); background: white; font-size: 10px; }
@@ -109,6 +116,81 @@
 .roleChoiceGrid .activeRoleChoice { border-color: var(--brand-500); background: var(--brand-50); box-shadow: inset 0 0 0 1px var(--brand-500); }
 .roleChoiceGrid .activeRoleChoice > b { border-color: var(--brand-600); color: white; background: var(--brand-600); }
 
+.customOverview { min-height: 0; overflow-y: auto; padding: 30px 42px 34px; background: #fcfbf9; }
+.customOverviewLead { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; max-width: 940px; margin: 0 auto 20px; }
+.customOverviewLead > div { display: grid; gap: 5px; }
+.customOverviewLead strong { color: var(--ink-950); font-size: 17px; letter-spacing: -.02em; }
+.customOverviewLead span { color: var(--ink-500); font-size: 11px; }
+.customOverviewLead > b { color: var(--brand-700); font-size: 11px; }
+.customOverviewGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; max-width: 940px; margin: 0 auto; }
+.customOverviewGrid > button { min-width: 0; display: grid; gap: 8px; padding: 10px; border: 1px solid #e7e1da; border-radius: 12px; color: inherit; background: white; text-align: left; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.customOverviewGrid > button:hover { transform: translateY(-2px); border-color: var(--brand-500); box-shadow: 0 10px 24px rgb(77 53 30 / 8%); }
+.customOverviewImage { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 9px; background: #f2efeb; }
+.customOverviewImage img { width: 100%; height: 100%; object-fit: cover; }
+.customOverviewImage > b { position: absolute; top: 9px; left: 9px; padding: 4px 6px; border-radius: 5px; color: white; background: rgb(38 31 26 / 70%); font-size: 9px; font-variant-numeric: tabular-nums; }
+.customOverviewImage > i { position: absolute; top: 9px; right: 9px; width: 28px; height: 28px; display: grid; place-items: center; border: 2px solid white; border-radius: 50%; color: white; background: var(--brand-600); }
+.customOverviewGrid > button > strong { color: var(--ink-900); font-size: 12px; }
+.customOverviewGrid > button > small { color: var(--ink-500); font-size: 9px; }
+.drawer > footer.customOverviewFooter { display: flex; justify-content: flex-end; padding: 14px 42px 18px; }
+.drawer > footer.customOverviewFooter button { width: 240px; }
+
+.aiSlotEditor { min-height: 0; overflow-y: auto; padding: 20px 42px 18px; }
+.customSlotStrip { display: grid; grid-template-columns: repeat(auto-fit, minmax(82px, 1fr)); gap: 12px; max-width: 1000px; margin: 0 auto 18px; }
+.customSlotStrip button { min-width: 0; display: grid; gap: 6px; padding: 6px; border: 1px solid #e5dfd8; border-radius: 8px; color: var(--ink-500); background: white; font-size: 10px; font-variant-numeric: tabular-nums; }
+.customSlotStrip button:hover { border-color: var(--brand-400); }
+.customSlotStrip button img { width: 100%; aspect-ratio: 1; border-radius: 5px; object-fit: cover; background: #f0ece7; }
+.customSlotStrip .activeCustomSlot { border: 2px solid var(--brand-600); padding: 5px; color: var(--brand-700); font-weight: 750; }
+
+.aiComparison { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; max-width: 1000px; margin: 0 auto; }
+.aiComparison figure { min-width: 0; display: grid; gap: 8px; margin: 0; }
+.aiComparison figcaption { color: var(--ink-800); font-size: 12px; font-weight: 750; }
+.aiComparison figure > img,
+.aiCandidate > div { width: 100%; max-height: 380px; aspect-ratio: 1; overflow: hidden; border: 1px solid #e1dcd6; border-radius: 10px; background: #f5f2ee; }
+.aiComparison figure > img { object-fit: contain; }
+.aiCandidate > div { position: relative; border: 2px solid var(--brand-600); }
+.aiCandidate > div > img { width: 100%; height: 100%; object-fit: contain; }
+.aiCandidate > div > i { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; display: grid; place-items: center; border: 2px solid white; border-radius: 50%; color: white; background: var(--brand-600); }
+.aiCandidate .generatingCandidate > img { opacity: .38; }
+.generationOverlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--brand-800); background: rgb(255 255 255 / 50%); font-size: 12px; font-weight: 750; }
+.spinningIcon { animation: spin .85s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.aiPromptArea { max-width: 1000px; margin: 16px auto 0; }
+.aiPromptBar { min-height: 52px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 7px 8px 7px 14px; border: 1px solid #ded8d1; border-radius: 10px; background: white; }
+.aiPromptBar > svg { color: var(--brand-600); }
+.aiPromptBar input { min-width: 0; height: 36px; padding: 0; border: 0; color: var(--ink-900); background: transparent; font-size: 12px; }
+.aiPromptBar input:focus { outline: 0; }
+.aiPromptBar:focus-within { border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-50); }
+.aiPromptBar button { height: 38px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 15px; border: 0; border-radius: 8px; color: white; background: var(--brand-600); font-size: 11px; font-weight: 750; }
+.aiPromptBar button:hover:not(:disabled) { background: var(--brand-700); }
+.aiPromptBar button:disabled { color: var(--ink-500); background: #e9e4df; cursor: not-allowed; }
+.referenceUploadButton { height: 36px; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 0 10px; border: 1px solid #e3ddd6; border-radius: 7px; color: var(--ink-700); background: #fbfaf8; cursor: pointer; font-size: 10px; font-weight: 700; }
+.referenceUploadButton:hover { border-color: var(--brand-400); color: var(--brand-700); background: var(--brand-50); }
+.referenceUploadButton input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.referenceFileChip { width: max-content; max-width: 100%; display: grid; grid-template-columns: auto minmax(0, auto) auto; align-items: center; gap: 7px; margin-top: 8px; padding: 5px 7px; border: 1px solid #eadfd3; border-radius: 7px; color: var(--ink-700); background: #fffaf3; font-size: 9px; }
+.referenceFileChip img { width: 24px; height: 24px; border-radius: 4px; object-fit: cover; }
+.referenceFileChip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.referenceFileChip button { width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; color: var(--ink-500); background: transparent; }
+.referenceFileChip button:hover { color: #a43d30; background: #fff0ed; }
+.aiPromptMeta { display: flex; align-items: center; gap: 9px; margin-top: 7px; color: var(--ink-400); font-size: 9px; }
+.aiPromptMeta b { padding: 3px 6px; border-radius: 999px; color: var(--brand-700); background: var(--brand-50); font-size: 8px; }
+.aiPromptMeta small { margin-left: auto; font-size: 9px; }
+.generationError { margin: 7px 0 0; color: #b43e2f; font-size: 10px; }
+
+.templateExtractionBar { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 16px; max-width: 1000px; margin: 16px auto 0; padding: 0 10px; border-top: 1px solid #eee9e3; color: var(--ink-500); }
+.templateExtractionBar > span { display: flex; align-items: center; gap: 7px; font-size: 10px; }
+.templateExtractionBar > span svg { color: var(--brand-600); }
+.templateExtractionBar > button { display: flex; align-items: center; gap: 6px; padding: 7px 9px; border: 0; color: var(--ink-700); background: transparent; font-size: 10px; }
+.templateExtractionBar > button:disabled { color: var(--ink-400); cursor: not-allowed; }
+.acceptedExtraction { color: #377d27; }
+.acceptedExtraction > span svg { color: #4b9f35; }
+
+.drawer > footer.slotEditorActions { display: grid; grid-template-columns: 1fr 1fr 1.18fr; gap: 14px; padding: 14px 42px 18px; }
+.drawer > footer.slotEditorActions button { width: 100%; height: 48px; border: 1px solid #ddd7d0; color: var(--ink-800); background: white; }
+.drawer > footer.slotEditorActions button:hover:not(:disabled) { border-color: var(--brand-500); color: var(--brand-700); background: var(--brand-50); }
+.drawer > footer.slotEditorActions .primarySlotAction { border-color: var(--brand-600); color: white; background: var(--brand-600); }
+.drawer > footer.slotEditorActions .primarySlotAction:hover:not(:disabled) { color: white; background: var(--brand-700); }
+
 .detailView { overflow-y: auto; padding: 18px 22px 24px; }
 .detailIntro { display: grid; gap: 8px; padding: 16px 2px 18px; border-bottom: 1px solid var(--line); }
 .detailIntro > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -158,6 +240,21 @@
 .lightboxPanel > footer button:not(:disabled):hover { border-color: var(--brand-500); color: var(--brand-700); background: var(--brand-50); }
 
 @media (max-width: 700px) {
+  .customEditDrawer { width: 100vw; }
+  .customOverview { padding: 22px 16px 26px; }
+  .customOverviewGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .aiSlotEditor { padding: 14px 16px; }
+  .customSlotStrip { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+  .aiComparison { grid-template-columns: 1fr; gap: 16px; }
+  .aiPromptBar { grid-template-columns: auto minmax(0, 1fr); }
+  .referenceUploadButton { grid-column: 1 / -1; }
+  .aiPromptBar button { grid-column: 1 / -1; }
+  .aiPromptMeta { align-items: flex-start; flex-wrap: wrap; }
+  .aiPromptMeta small { width: 100%; margin-left: 0; }
+  .templateExtractionBar { align-items: flex-start; flex-direction: column; padding: 12px 0; }
+  .drawer > footer.slotEditorActions { grid-template-columns: 1fr; gap: 8px; padding: 12px 16px; }
+  .drawer > footer.customOverviewFooter { padding-inline: 16px; }
+  .drawer > footer.customOverviewFooter button { width: 100%; }
   .selectedTemplate { grid-template-columns: 112px 1fr; }
   .infoGrid { grid-template-columns: 1fr; }
   .infoGrid label:last-child:nth-child(odd) { grid-column: auto; }

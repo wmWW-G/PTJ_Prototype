@@ -77,6 +77,10 @@ export interface LiveGenerationRequest {
   variant_count: number;
   user_requirement: string;
   supplemental_info: Record<string, string>;
+  /** 只让文本 LLM 生成逐张 Prompt，禁止编排器调用图片模型。 */
+  planning_only?: boolean;
+  /** 用户已经确认或逐张优化后的方案；存在时后端不得再次调用 Planner 改写。 */
+  confirmed_plans?: PromptPlanPayload[];
   /** 只用于学习构图、光线和视觉风格，不得作为商品主体分析。 */
   style_reference_assets?: ReferenceAssetPayload[];
   /** 用户自己的产品素材，决定成图中的商品外观与结构。 */
@@ -85,6 +89,16 @@ export interface LiveGenerationRequest {
   logo_asset?: ReferenceAssetPayload;
   /** Logo 的构图位置；只有 logo_asset 存在时才会被后端执行。 */
   logo_position?: LogoPosition;
+}
+
+/** 单张 Prompt 优化接口的请求体。 */
+export interface PromptRefinementPayload {
+  image_prompt: PlannedImagePrompt;
+  global_consistency_prompt: string;
+  user_requirement: string;
+  feedback: string;
+  language: string;
+  target_model: LiveImageModel;
 }
 
 /** NDJSON 中的统一事件；未知 type 会被前端安全忽略。 */

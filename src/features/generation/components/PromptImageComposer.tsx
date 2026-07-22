@@ -243,6 +243,10 @@ export function PromptImageComposer({
     const next = { file, url: URL.createObjectURL(file) };
     setLogoPreview(next);
     onLogoChange(file, logoPosition);
+    // 文件通过校验并同步给父组件后，当前操作已经完成。立即收起设置面板，
+    // 让用户直接看到“Logo 已添加”的紧凑状态；校验失败会在上方提前返回，
+    // 因此错误文件不会误关面板，用户仍可在原位置重新选择。
+    setIsLogoOpen(false);
     console.info("[批图匠] 品牌 Logo 已加入生成任务", {
       filename: file.name,
       position: logoPosition,

@@ -7,7 +7,7 @@ from pydantic import ValidationError
 import pytest
 
 from backend.app import create_app
-from backend.domain import GenerationRequest, ReferenceAsset, StreamEvent
+from backend.domain import GenerationRequest, ImagePrompt, ReferenceAsset, StreamEvent
 from backend.settings import Settings
 
 
@@ -32,11 +32,26 @@ class FakeStorage:
 class FakeOrchestrator:
     """返回两条固定流事件的生成编排器。"""
 
+    def __init__(self) -> None:
+        self.last_request: GenerationRequest | None = None
+
     async def stream(self, request: GenerationRequest) -> AsyncIterator[StreamEvent]:
         """模拟一个立刻完成的任务。"""
 
+        self.last_request = request
         yield StreamEvent(type="job_started", job_id="job-1", status="planning")
         yield StreamEvent(type="job_completed", job_id="job-1", status="completed")
+
+    async def refine_prompt(self, request: object) -> ImagePrompt:
+        """模拟 LLM 根据用户意见返回重写后的单张 Prompt。"""
+
+        return ImagePrompt(
+            index=2,
+            role="detail",
+            title="结构细节",
+            prompt="放大帽檐走线，并使用圆形细节特写",
+            negative_prompt="不要改变帽子结构",
+        )
 
 
 def _client(*, configured: bool = False) -> TestClient:
@@ -273,6 +288,65 @@ def test_stream_is_ndjson() -> None:
     assert response.headers["content-type"].startswith("application/x-ndjson")
     lines = [line for line in response.text.strip().splitlines()]
     assert len(lines) == 2
+
+
+def test_plan_endpoint_forces_planning_only_without_using_live_stream_route() -> None:
+    """独立规划入口必须在旧后端上安全 404，在新后端上强制禁止图片生成。"""
+
+    orchestrator = FakeOrchestrator()
+    settings = Settings(
+        google_cloud_project="project",
+        google_service_account_json="{}",
+        openrouter_api_key="openrouter-key",
+        blob_read_write_token="blob-token",
+        blob_allowed_host="blob.example",
+    )
+    client = TestClient(create_app(
+        settings=settings,
+        storage=FakeStorage(),
+        orchestrator=orchestrator,
+    ))
+
+    response = client.post(
+        "/api/generations/plan",
+        json={
+            "image_type": "main",
+            "template_id": "main_01",
+            "model": "nano_banana_2",
+            "aspect_ratio": "1:1",
+            "resolution": "2K",
+            "user_requirement": "生成商品主图",
+        },
+    )
+
+    assert response.status_code == 200
+    assert orchestrator.last_request is not None
+    assert orchestrator.last_request.planning_only is True
+
+
+def test_refine_prompt_endpoint_returns_llm_rewritten_prompt() -> None:
+    """前端应能把单张修改意见提交给 LLM，并取得新的结构化 Prompt。"""
+
+    response = _client(configured=True).post(
+        "/api/generations/refine-prompt",
+        json={
+            "image_prompt": {
+                "index": 2,
+                "role": "detail",
+                "title": "结构细节",
+                "prompt": "展示帽子结构",
+                "negative_prompt": "不要改变帽子结构",
+            },
+            "global_consistency_prompt": "整套保持同一顶帽子",
+            "user_requirement": "生成帽子商品套图",
+            "feedback": "放大帽檐走线，增加圆形细节特写",
+            "language": "zh-CN",
+            "target_model": "gpt_image_2_openrouter",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["prompt"] == "放大帽檐走线，并使用圆形细节特写"
 
 
 def test_generation_mode_is_inferred_from_reference_assets() -> None:

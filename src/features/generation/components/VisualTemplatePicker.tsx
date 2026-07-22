@@ -1,22 +1,32 @@
 import {
-  ArrowDown,
   ArrowLeft,
-  ArrowUp,
+  Bookmark,
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CircleCheck,
   Eye,
   ImageIcon,
+  ImagePlus,
   Layers3,
-  Plus,
-  Trash2,
+  LoaderCircle,
+  RefreshCw,
+  Sparkles,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  type ChangeEvent,
+  type ClipboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { assetPath } from "../../../lib/assetPath";
 import type { CustomVisualRoleSelection, ImageType } from "../../tasks/types";
+import { generateCustomTemplateImage } from "../api";
 import type { VisualTemplateCapability } from "../liveTypes";
 import styles from "./VisualTemplatePicker.module.css";
 
@@ -355,6 +365,82 @@ interface VisualTemplatePickerProps {
 }
 
 /**
+ * 自定义模板演示中的单张图片槽位。
+ *
+ * 槽位只描述图片在整套内容里的职责与预览素材。正式接入 AI 后，后端会把
+ * 用户最终采用的图片进一步提取为结构化视觉配方，而不是把当前商品文案硬编码
+ * 进模板。
+ */
+interface CustomPreviewSlot {
+  title: string;
+  originalImage: string;
+  candidateImages: string[];
+}
+
+/**
+ * 自定义模板的八张演示槽位；套图使用前六张，详情图使用全部八张。
+ *
+ * 这里复用用户提供的真实参考图作为视觉原型素材，避免用空白占位图冒充 AI 结果。
+ * 多个职责可以共用同一张参考图；正式生成时会由后端返回每张独立结果。
+ */
+const CUSTOM_PREVIEW_SLOTS: CustomPreviewSlot[] = [
+  {
+    title: "商品主视觉",
+    originalImage: "demo/custom-template/cap-product-overview.jpg",
+    candidateImages: ["demo/custom-template/cap-logo-crafts.jpg", "demo/custom-template/cap-detail-callouts.jpg"],
+  },
+  {
+    title: "结构细节",
+    originalImage: "demo/custom-template/cap-detail-callouts.jpg",
+    candidateImages: ["demo/custom-template/cap-product-overview.jpg", "demo/custom-template/cap-logo-crafts.jpg"],
+  },
+  {
+    title: "核心卖点",
+    originalImage: "demo/custom-template/cap-logo-crafts.jpg",
+    candidateImages: ["demo/custom-template/cap-product-overview.jpg", "demo/custom-template/cap-detail-callouts.jpg"],
+  },
+  {
+    title: "Logo 工艺展示",
+    originalImage: "demo/custom-template/cap-product-overview.jpg",
+    candidateImages: ["demo/custom-template/cap-logo-crafts.jpg", "demo/custom-template/cap-detail-callouts.jpg"],
+  },
+  {
+    title: "颜色款式",
+    originalImage: "demo/custom-template/cap-product-overview.jpg",
+    candidateImages: ["demo/custom-template/cap-detail-callouts.jpg", "demo/custom-template/cap-logo-crafts.jpg"],
+  },
+  {
+    title: "应用场景",
+    originalImage: "demo/custom-template/cap-detail-callouts.jpg",
+    candidateImages: ["demo/custom-template/cap-product-overview.jpg", "demo/custom-template/cap-logo-crafts.jpg"],
+  },
+  {
+    title: "品质背书",
+    originalImage: "demo/custom-template/cap-logo-crafts.jpg",
+    candidateImages: ["demo/custom-template/cap-detail-callouts.jpg", "demo/custom-template/cap-product-overview.jpg"],
+  },
+  {
+    title: "包装与合作",
+    originalImage: "demo/custom-template/cap-product-overview.jpg",
+    candidateImages: ["demo/custom-template/cap-logo-crafts.jpg", "demo/custom-template/cap-detail-callouts.jpg"],
+  },
+];
+
+/**
+ * 解析自定义编辑器图片地址。
+ *
+ * public 目录里的演示素材需要补 Vite BASE_URL；真实生图 URL、Blob 预览和
+ * Data URL 已经是完整地址，必须原样返回，否则 GitHub Pages 会把它们误拼成
+ * 项目内静态路径。
+ *
+ * @param source 静态相对路径或浏览器可直接访问的完整地址。
+ * @returns 可直接传给 img.src 的地址。
+ */
+function resolveCustomImageSource(source: string): string {
+  return /^(?:https?:|blob:|data:)/.test(source) ? source : assetPath(source);
+}
+
+/**
  * 展示当前视觉模板，并通过右侧抽屉让用户预览和切换整套风格。
  *
  * @param props.value 已提交使用的模板 ID。
@@ -402,6 +488,18 @@ export function VisualTemplatePicker({
   const [previewRoleIndex, setPreviewRoleIndex] = useState<number | null>(null);
   const [isCustomBuilderOpen, setIsCustomBuilderOpen] = useState(false);
   const [draftCustomRoles, setDraftCustomRoles] = useState<CustomVisualRoleSelection[]>([]);
+  const [customEditorSlotIndex, setCustomEditorSlotIndex] = useState<number | null>(null);
+  const [editInstruction, setEditInstruction] = useState("增加四种 Logo 工艺展示，整体更专业，文案由 AI 生成");
+  const [candidateRevisions, setCandidateRevisions] = useState<Record<number, number>>({});
+  const [generatedCandidateImages, setGeneratedCandidateImages] = useState<Record<number, string>>({});
+  const [customReferenceFile, setCustomReferenceFile] = useState<File | null>(null);
+  const [customReferencePreviewUrl, setCustomReferencePreviewUrl] = useState<string | null>(null);
+  const [isCustomGenerating, setIsCustomGenerating] = useState(false);
+  const [customGenerationError, setCustomGenerationError] = useState<string | null>(null);
+  const [acceptedSlotIndexes, setAcceptedSlotIndexes] = useState<number[]>([]);
+  const [savedSlotIndexes, setSavedSlotIndexes] = useState<number[]>([]);
+  const editInstructionRef = useRef<HTMLInputElement>(null);
+  const customReferenceInputRef = useRef<HTMLInputElement>(null);
   const categories = ["推荐", "自定义", ...new Set(templateList.map((item) => item.category))];
   const visibleTemplates = category === "推荐"
     ? templateList
@@ -413,13 +511,32 @@ export function VisualTemplatePicker({
   const detailTemplate = detailTemplateId
     ? templateList.find((template) => template.id === detailTemplateId) ?? null
     : null;
-  const rolePoolByKey = new Map(rolePool.map((role) => [customRoleKey(role), role]));
-  const draftCustomRoleItems = draftCustomRoles
-    .map((role) => rolePoolByKey.get(customRoleKey(role)))
-    .filter((role): role is CustomRolePoolItem => Boolean(role));
   const customCardImages = customTemplate.preview_images.length > 0
     ? customTemplate.preview_images.slice(0, 4)
     : rolePool.slice(0, 4).map((role) => role.previewImage).filter(Boolean);
+  const activeCustomSlot = customEditorSlotIndex === null
+    ? null
+    : CUSTOM_PREVIEW_SLOTS[customEditorSlotIndex % CUSTOM_PREVIEW_SLOTS.length];
+  const generatedActiveCandidate = customEditorSlotIndex === null
+    ? null
+    : generatedCandidateImages[customEditorSlotIndex] ?? null;
+  const activeCandidateImage = generatedActiveCandidate ?? (activeCustomSlot
+    ? activeCustomSlot.candidateImages[
+      (candidateRevisions[customEditorSlotIndex ?? 0] ?? 0) % activeCustomSlot.candidateImages.length
+    ]
+    : null);
+  const hasGeneratedActiveCandidate = Boolean(generatedActiveCandidate);
+  const activeSlotAccepted = customEditorSlotIndex !== null
+    && acceptedSlotIndexes.includes(customEditorSlotIndex);
+  const activeSlotSaved = customEditorSlotIndex !== null
+    && savedSlotIndexes.includes(customEditorSlotIndex);
+
+  /** 参考图变更或组件卸载时释放 Blob 预览，避免长时间编辑产生内存泄漏。 */
+  useEffect(() => () => {
+    if (customReferencePreviewUrl && typeof URL.revokeObjectURL === "function") {
+      URL.revokeObjectURL(customReferencePreviewUrl);
+    }
+  }, [customReferencePreviewUrl]);
 
   /** 打开抽屉时以当前模板为草稿，取消操作不会污染正式选择。 */
   function openDrawer() {
@@ -428,6 +545,7 @@ export function VisualTemplatePicker({
     setDetailTemplateId(null);
     setPreviewRoleIndex(null);
     setIsCustomBuilderOpen(false);
+    setCustomEditorSlotIndex(null);
     setIsOpen(true);
   }
 
@@ -436,6 +554,7 @@ export function VisualTemplatePicker({
     setDetailTemplateId(null);
     setPreviewRoleIndex(null);
     setIsCustomBuilderOpen(false);
+    setCustomEditorSlotIndex(null);
     setIsOpen(false);
   }
 
@@ -464,28 +583,15 @@ export function VisualTemplatePicker({
     setDetailTemplateId(null);
     setPreviewRoleIndex(null);
     setIsCustomBuilderOpen(true);
-  }
-
-  /** 点击职责卡时加入或移除；达到固定张数后必须先移除一项才能继续添加。 */
-  function toggleCustomRole(role: CustomVisualRoleSelection) {
-    const key = customRoleKey(role);
-    setDraftCustomRoles((current) => {
-      const existingIndex = current.findIndex((item) => customRoleKey(item) === key);
-      if (existingIndex >= 0) return current.filter((_, index) => index !== existingIndex);
-      if (current.length >= requiredRoleCount) return current;
-      return [...current, { ...role }];
-    });
-  }
-
-  /** 调整已选职责顺序；最终顺序会直接对应第 1–6 / 1–8 张图片。 */
-  function moveCustomRole(index: number, direction: -1 | 1) {
-    setDraftCustomRoles((current) => {
-      const nextIndex = index + direction;
-      if (nextIndex < 0 || nextIndex >= current.length) return current;
-      const next = [...current];
-      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
-      return next;
-    });
+    setCustomEditorSlotIndex(null);
+    setCandidateRevisions({});
+    setGeneratedCandidateImages({});
+    setCustomReferenceFile(null);
+    setCustomReferencePreviewUrl(null);
+    setCustomGenerationError(null);
+    setIsCustomGenerating(false);
+    setAcceptedSlotIndexes([]);
+    setSavedSlotIndexes([]);
   }
 
   /** 只有选满当前类型要求的固定张数后，才提交自定义模板与职责顺序。 */
@@ -494,6 +600,146 @@ export function VisualTemplatePicker({
     onCustomRolesChange(draftCustomRoles.map((role) => ({ ...role })));
     onChange(customTemplateId);
     closeDrawer();
+  }
+
+  /**
+   * 打开某一张图片的 AI 修改视图。
+   *
+   * @param slotIndex 用户在整套模板中点击的零基槽位索引。
+   */
+  function openCustomSlotEditor(slotIndex: number) {
+    setCustomEditorSlotIndex(slotIndex);
+  }
+
+  /**
+   * 调用真实 GPT-Image-2 单图链路，并把结果写回当前模板槽位。
+   *
+   * 当前槽位索引会在请求开始时固定下来，即使请求过程中用户切换了图片，也不会
+   * 把较晚返回的结果误写进另一个槽位。纯文字和“参考图 + 文字”共用同一入口。
+   *
+   * @returns 请求完成后结束；结果或错误直接写入组件状态。
+   */
+  async function regenerateCustomCandidate(): Promise<void> {
+    if (customEditorSlotIndex === null || isCustomGenerating) return;
+    const targetSlotIndex = customEditorSlotIndex;
+    const instruction = editInstruction.trim();
+    if (!instruction) {
+      setCustomGenerationError("请先告诉 AI 想怎么生成或修改");
+      editInstructionRef.current?.focus();
+      return;
+    }
+
+    setIsCustomGenerating(true);
+    setCustomGenerationError(null);
+    try {
+      const resultImageUrl = await generateCustomTemplateImage({
+        instruction,
+        referenceFile: customReferenceFile,
+      });
+      setGeneratedCandidateImages((current) => ({
+        ...current,
+        [targetSlotIndex]: resultImageUrl,
+      }));
+      setAcceptedSlotIndexes((current) => current.filter((index) => index !== targetSlotIndex));
+      setSavedSlotIndexes((current) => current.filter((index) => index !== targetSlotIndex));
+    } catch (error) {
+      setCustomGenerationError(error instanceof Error ? error.message : "生图失败，请重试");
+    } finally {
+      setIsCustomGenerating(false);
+    }
+  }
+
+  /**
+   * 保存一张可选参考图，并创建即时本地预览。
+   *
+   * 文件选择与输入框粘贴共用这段校验，保证两种入口的格式和状态行为一致。
+   *
+   * @param nextFile 用户选择或粘贴的图片文件。
+   * @returns 文件通过校验并写入状态时返回 true，否则返回 false。
+   */
+  function applyCustomReferenceFile(nextFile: File): boolean {
+    if (!["image/png", "image/jpeg", "image/webp"].includes(nextFile.type)) {
+      setCustomGenerationError("参考图仅支持 PNG、JPG 或 WebP");
+      return false;
+    }
+
+    setCustomReferenceFile(nextFile);
+    setCustomGenerationError(null);
+    setCustomReferencePreviewUrl(
+      typeof URL.createObjectURL === "function" ? URL.createObjectURL(nextFile) : null,
+    );
+    return true;
+  }
+
+  /**
+   * 处理文件按钮选择的参考图。
+   *
+   * @param event 文件输入框的 change 事件。
+   * @returns 无返回值；不支持的格式会清空输入框，允许立即重选。
+   */
+  function handleCustomReferenceChange(event: ChangeEvent<HTMLInputElement>): void {
+    const nextFile = event.target.files?.[0] ?? null;
+    if (!nextFile) return;
+    if (!applyCustomReferenceFile(nextFile)) event.target.value = "";
+  }
+
+  /**
+   * 允许用户在自然语言输入框里直接粘贴截图或复制的图片。
+   *
+   * 只有剪贴板里确实包含图片时才拦截默认粘贴；普通文字仍按浏览器默认行为
+   * 写入输入框，不影响用户编辑修改要求。
+   *
+   * @param event 修改要求输入框的粘贴事件。
+   * @returns 无返回值；找到的第一张图片会成为当前唯一参考图。
+   */
+  function handleCustomReferencePaste(event: ClipboardEvent<HTMLInputElement>): void {
+    const pastedFromFiles = Array.from(event.clipboardData.files).find(
+      (file) => file.type.startsWith("image/"),
+    );
+    const pastedFromItems = Array.from(event.clipboardData.items).find(
+      (item) => item.kind === "file" && item.type.startsWith("image/"),
+    )?.getAsFile();
+    const pastedImage = pastedFromFiles ?? pastedFromItems;
+    if (!pastedImage) return;
+
+    event.preventDefault();
+    applyCustomReferenceFile(pastedImage);
+  }
+
+  /** 清除当前参考图，并允许用户重新选择同名文件。 */
+  function clearCustomReference(): void {
+    setCustomReferenceFile(null);
+    setCustomReferencePreviewUrl(null);
+    if (customReferenceInputRef.current) customReferenceInputRef.current.value = "";
+  }
+
+  /** 把键盘焦点放回唯一的自然语言修改框，避免打开额外设置面板。 */
+  function focusEditInstruction() {
+    editInstructionRef.current?.focus();
+  }
+
+  /**
+   * 采用当前候选图，并把现有职责顺序提交为自定义模板。
+   *
+   * 这里只保存前端原型状态；结构化视觉配方仍需后续接入真实 AI 提取接口。
+   */
+  function acceptCustomCandidate() {
+    if (customEditorSlotIndex === null || !hasGeneratedActiveCandidate || isCustomGenerating) return;
+    setAcceptedSlotIndexes((current) => current.includes(customEditorSlotIndex)
+      ? current
+      : [...current, customEditorSlotIndex]);
+    if (draftCustomRoles.length === requiredRoleCount) {
+      onCustomRolesChange(draftCustomRoles.map((role) => ({ ...role })));
+      onChange(customTemplateId);
+    }
+  }
+
+  /** 将已采用图片标记为已保存个人模板；真实持久化接口将在后续阶段接入。 */
+  function saveAcceptedSlotAsTemplate() {
+    if (customEditorSlotIndex === null || !acceptedSlotIndexes.includes(customEditorSlotIndex)) return;
+    setSavedSlotIndexes((current) => current.includes(customEditorSlotIndex)
+      ? current
+      : [...current, customEditorSlotIndex]);
   }
 
   /**
@@ -555,26 +801,53 @@ export function VisualTemplatePicker({
         <div className={styles.drawerLayer}>
           <button className={styles.backdrop} type="button" aria-label="关闭模板选择" onClick={closeDrawer} />
           <aside
-            className={`${styles.drawer} ${detailTemplate || isCustomBuilderOpen ? styles.detailDrawer : ""}`}
+            className={`${styles.drawer} ${detailTemplate || isCustomBuilderOpen ? styles.detailDrawer : ""} ${isCustomBuilderOpen ? styles.customEditDrawer : ""}`}
             role="dialog"
             aria-modal="true"
             aria-label="选择生图模板"
           >
             <header>
               {isCustomBuilderOpen ? (
-                <div className={styles.detailHeader}>
-                  <button
-                    type="button"
-                    aria-label="返回模板列表"
-                    onClick={() => setIsCustomBuilderOpen(false)}
-                  >
-                    <ArrowLeft size={18} />
-                  </button>
-                  <div>
-                    <h2>自定义{imageType === "set" ? "套图" : "详情图"}</h2>
-                    <span>从当前类型的现有职责中自由组合，并确定最终生成顺序。</span>
+                customEditorSlotIndex === null ? (
+                  <div className={styles.detailHeader}>
+                    <button
+                      type="button"
+                      aria-label="返回模板列表"
+                      onClick={() => setIsCustomBuilderOpen(false)}
+                    >
+                      <ArrowLeft size={18} />
+                    </button>
+                    <div>
+                      <h2>自定义{imageType === "set" ? "套图" : "详情图"}</h2>
+                      <span>点击任一张图片，用一句话交给 AI 修改。</span>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className={styles.customEditorHeader}>
+                    <button
+                      type="button"
+                      aria-label="返回整套"
+                      onClick={() => setCustomEditorSlotIndex(null)}
+                    >
+                      <ArrowLeft size={18} />返回整套
+                    </button>
+                    <div>
+                      <h2>第 {customEditorSlotIndex + 1} 张 · {activeCustomSlot?.title}</h2>
+                      <span>
+                        {isCustomGenerating
+                          ? <LoaderCircle className={styles.spinningIcon} size={13} />
+                          : hasGeneratedActiveCandidate
+                            ? <CircleCheck size={13} />
+                            : <Sparkles size={13} />}
+                        {isCustomGenerating
+                          ? "GPT-Image-2 正在生成"
+                          : hasGeneratedActiveCandidate
+                            ? "GPT-Image-2 已生成新版本"
+                            : "GPT-Image-2 · 低"}
+                      </span>
+                    </div>
+                  </div>
+                )
               ) : detailTemplate ? (
                   <div className={styles.detailHeader}>
                   <button
@@ -604,117 +877,185 @@ export function VisualTemplatePicker({
             </header>
 
             {isCustomBuilderOpen ? (
-              <>
-                <div className={styles.customBuilder}>
-                  <section className={styles.customSelectionSummary}>
-                    <div>
-                      <span><Layers3 size={16} />已选职责</span>
-                      <b className={draftCustomRoles.length === requiredRoleCount ? styles.selectionComplete : ""}>
-                        {draftCustomRoles.length}/{requiredRoleCount}
-                      </b>
-                    </div>
-                    <p>点击下方职责加入组合；这里的顺序就是最终第 1–{requiredRoleCount} 张图片的顺序。</p>
-                    <div className={styles.selectionProgress} aria-hidden="true">
-                      <i style={{ width: `${(draftCustomRoles.length / requiredRoleCount) * 100}%` }} />
-                    </div>
-                  </section>
-
-                  <section className={styles.selectedRoleSequence} aria-label="已选职责顺序">
-                    {draftCustomRoleItems.map((role, index) => (
-                      <article key={customRoleKey(role)}>
-                        <img src={assetPath(role.previewImage)} alt="" />
-                        <b>{String(index + 1).padStart(2, "0")}</b>
-                        <div>
-                          <strong>{role.role}</strong>
-                          <span>来自 {role.templateName}</span>
-                        </div>
-                        <div className={styles.sequenceActions}>
-                          <button
-                            type="button"
-                            aria-label={`上移${role.role}`}
-                            disabled={index === 0}
-                            onClick={() => moveCustomRole(index, -1)}
-                          ><ArrowUp size={14} /></button>
-                          <button
-                            type="button"
-                            aria-label={`下移${role.role}`}
-                            disabled={index === draftCustomRoleItems.length - 1}
-                            onClick={() => moveCustomRole(index, 1)}
-                          ><ArrowDown size={14} /></button>
-                          <button
-                            type="button"
-                            aria-label={`移除${role.role}`}
-                            onClick={() => toggleCustomRole(role)}
-                          ><Trash2 size={14} /></button>
-                        </div>
-                      </article>
-                    ))}
-                    {draftCustomRoleItems.length === 0 && (
-                      <div className={styles.emptySelection}>
-                        <Layers3 size={20} />
-                        <span>还没有选择职责</span>
-                      </div>
-                    )}
-                  </section>
-
-                  <section className={styles.customRoleLibrary}>
-                    <div className={styles.libraryHeading}>
+              customEditorSlotIndex === null ? (
+                <>
+                  <div className={styles.customOverview}>
+                    <div className={styles.customOverviewLead}>
                       <div>
-                        <h3>现有{imageType === "set" ? "套图" : "详情图"}职责库</h3>
-                        <p>只能选择当前类型；选满后可移除或调整顺序。</p>
+                        <strong>AI 已经排好整套结构</strong>
+                        <span>不满意哪一张，就直接点击那张修改。</span>
                       </div>
-                      <b>{rolePool.length} 个可选职责</b>
+                      <b>{requiredRoleCount} 张 / 版</b>
                     </div>
-                    {templateList.map((template) => (
-                      <section key={template.id} className={styles.roleSourceGroup}>
-                        <h4>{template.name}</h4>
-                        <div className={styles.roleChoiceGrid}>
-                          {template.role_highlights.map((role, roleIndex) => {
-                            const selection = { template_id: template.id, role_index: roleIndex };
-                            const selectedIndex = draftCustomRoles.findIndex(
-                              (item) => customRoleKey(item) === customRoleKey(selection),
-                            );
-                            const active = selectedIndex >= 0;
-                            const atLimit = !active && draftCustomRoles.length >= requiredRoleCount;
-                            const previewImage = template.preview_images.length > 0
-                              ? template.preview_images[roleIndex % template.preview_images.length]
-                              : "";
-                            return (
-                              <button
-                                key={`${template.id}:${roleIndex}`}
-                                type="button"
-                                aria-label={`${active ? "移除" : "选择"}职责：${role}，来自${template.name}`}
-                                aria-pressed={active}
-                                className={active ? styles.activeRoleChoice : ""}
-                                disabled={atLimit}
-                                onClick={() => toggleCustomRole(selection)}
-                              >
-                                {previewImage ? <img src={assetPath(previewImage)} alt="" /> : <ImageIcon size={20} />}
-                                <span>
-                                  <strong>{role}</strong>
-                                  <small>{template.role_compositions?.[roleIndex] ?? "独立生成这一职责画面。"}</small>
-                                </span>
-                                <b>{active ? String(selectedIndex + 1).padStart(2, "0") : <Plus size={14} />}</b>
-                              </button>
-                            );
-                          })}
+                    <div className={styles.customOverviewGrid}>
+                      {Array.from({ length: requiredRoleCount }, (_, index) => {
+                        const slot = CUSTOM_PREVIEW_SLOTS[index % CUSTOM_PREVIEW_SLOTS.length];
+                        const accepted = acceptedSlotIndexes.includes(index);
+                        const previewImage = accepted
+                          ? generatedCandidateImages[index]
+                            ?? slot.candidateImages[(candidateRevisions[index] ?? 0) % slot.candidateImages.length]
+                          : slot.originalImage;
+                        return (
+                          <button
+                            key={`${slot.title}-${index}`}
+                            type="button"
+                            aria-label={`修改第 ${index + 1} 张：${slot.title}`}
+                            onClick={() => openCustomSlotEditor(index)}
+                          >
+                            <span className={styles.customOverviewImage}>
+                              <img src={resolveCustomImageSource(previewImage)} alt="" />
+                              <b>{String(index + 1).padStart(2, "0")}</b>
+                              {accepted && <i><CircleCheck size={17} /></i>}
+                            </span>
+                            <strong>{slot.title}</strong>
+                            <small>{accepted ? "已采用 AI 新版本" : "点击后用一句话修改"}</small>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <footer className={styles.customOverviewFooter}>
+                    <button type="button" onClick={confirmCustomTemplate}>使用这套模板</button>
+                  </footer>
+                </>
+              ) : (
+                <>
+                  <div className={styles.aiSlotEditor}>
+                    <nav className={styles.customSlotStrip} aria-label="整套图片">
+                      {Array.from({ length: requiredRoleCount }, (_, index) => {
+                        const slot = CUSTOM_PREVIEW_SLOTS[index % CUSTOM_PREVIEW_SLOTS.length];
+                        const selectedSlot = index === customEditorSlotIndex;
+                        const thumbnailImage = generatedCandidateImages[index] ?? slot.originalImage;
+                        return (
+                          <button
+                            key={`${slot.title}-thumbnail-${index}`}
+                            type="button"
+                            className={selectedSlot ? styles.activeCustomSlot : ""}
+                            aria-label={`查看第 ${index + 1} 张：${slot.title}`}
+                            aria-current={selectedSlot ? "true" : undefined}
+                            onClick={() => openCustomSlotEditor(index)}
+                          >
+                            <img src={resolveCustomImageSource(thumbnailImage)} alt="" />
+                            <span>{index + 1}</span>
+                          </button>
+                        );
+                      })}
+                    </nav>
+
+                    <section className={styles.aiComparison} aria-label="原图与 AI 新版本对比">
+                      <figure>
+                        <figcaption>原图</figcaption>
+                        <img
+                          src={resolveCustomImageSource(activeCustomSlot?.originalImage ?? "")}
+                          alt="修改前的原图"
+                        />
+                      </figure>
+                      <figure className={styles.aiCandidate}>
+                        <figcaption>{hasGeneratedActiveCandidate ? "AI 新版本" : "参考预览"}</figcaption>
+                        <div className={isCustomGenerating ? styles.generatingCandidate : ""}>
+                          <img
+                            src={resolveCustomImageSource(activeCandidateImage ?? "")}
+                            alt="AI 生成的新版本"
+                          />
+                          {isCustomGenerating ? (
+                            <span className={styles.generationOverlay}>
+                              <LoaderCircle className={styles.spinningIcon} size={22} />
+                              正在生成
+                            </span>
+                          ) : hasGeneratedActiveCandidate ? (
+                            <i><CircleCheck size={18} /></i>
+                          ) : null}
                         </div>
-                      </section>
-                    ))}
-                  </section>
-                </div>
-                <footer>
-                  <button
-                    type="button"
-                    disabled={draftCustomRoles.length !== requiredRoleCount}
-                    onClick={confirmCustomTemplate}
-                  >
-                    {draftCustomRoles.length === requiredRoleCount
-                      ? `使用自定义${imageType === "set" ? "套图" : "详情图"}`
-                      : `还需选择 ${requiredRoleCount - draftCustomRoles.length} 项`}
-                  </button>
-                </footer>
-              </>
+                      </figure>
+                    </section>
+
+                    <div className={styles.aiPromptArea}>
+                      <div className={styles.aiPromptBar}>
+                        <Sparkles size={18} />
+                        <input
+                          ref={editInstructionRef}
+                          aria-label="告诉 AI 怎么修改这一张"
+                          value={editInstruction}
+                          maxLength={200}
+                          onChange={(event) => setEditInstruction(event.target.value)}
+                          onPaste={handleCustomReferencePaste}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") void regenerateCustomCandidate();
+                          }}
+                        />
+                        <label className={styles.referenceUploadButton}>
+                          <ImagePlus size={15} />{customReferenceFile ? "已附图" : "附图"}
+                          <input
+                            ref={customReferenceInputRef}
+                            type="file"
+                            aria-label="附加参考图"
+                            accept="image/png,image/jpeg,image/webp"
+                            onChange={handleCustomReferenceChange}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          disabled={isCustomGenerating || !editInstruction.trim()}
+                          onClick={() => void regenerateCustomCandidate()}
+                        >
+                          {isCustomGenerating
+                            ? <LoaderCircle className={styles.spinningIcon} size={16} />
+                            : <RefreshCw size={16} />}
+                          {isCustomGenerating ? "生成中" : "重新生成"}
+                        </button>
+                      </div>
+                      {customReferenceFile && (
+                        <div className={styles.referenceFileChip}>
+                          {customReferencePreviewUrl && <img src={customReferencePreviewUrl} alt="参考图缩略图" />}
+                          <span title={customReferenceFile.name}>{customReferenceFile.name}</span>
+                          <button type="button" aria-label="移除参考图" onClick={clearCustomReference}>
+                            <X size={13} />
+                          </button>
+                        </div>
+                      )}
+                      <div className={styles.aiPromptMeta}>
+                        <b>GPT-Image-2 · 低</b>
+                        <span>支持纯文字或 1 张参考图 + 文字，可直接粘贴图片</span>
+                        <small>认证、MOQ、材质等数据只使用已确认资料</small>
+                      </div>
+                      {customGenerationError && <p className={styles.generationError} role="alert">{customGenerationError}</p>}
+                    </div>
+
+                    <div className={`${styles.templateExtractionBar} ${activeSlotAccepted ? styles.acceptedExtraction : ""}`}>
+                      <span>
+                        {activeSlotAccepted ? <CircleCheck size={17} /> : <Sparkles size={17} />}
+                        {activeSlotAccepted
+                          ? "已采用；模板特征提取与持久化当前仍为原型状态"
+                          : "先生成并采用图片，再保存为个人模板"}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={!activeSlotAccepted || activeSlotSaved}
+                        onClick={saveAcceptedSlotAsTemplate}
+                      >
+                        <Bookmark size={16} />{activeSlotSaved ? "已保存到我的模板" : "保存为我的模板"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <footer className={styles.slotEditorActions}>
+                    <button type="button" onClick={focusEditInstruction}>继续修改</button>
+                    <button
+                      type="button"
+                      disabled={isCustomGenerating || !editInstruction.trim()}
+                      onClick={() => void regenerateCustomCandidate()}
+                    >再生成一个</button>
+                    <button
+                      type="button"
+                      className={styles.primarySlotAction}
+                      disabled={!hasGeneratedActiveCandidate || isCustomGenerating}
+                      onClick={acceptCustomCandidate}
+                    >
+                      {activeSlotAccepted ? "已采用这张" : "采用这张"}
+                    </button>
+                  </footer>
+                </>
+              )
             ) : detailTemplate ? (
               <>
                 <div className={styles.detailView}>

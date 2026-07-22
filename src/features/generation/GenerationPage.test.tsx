@@ -8,7 +8,17 @@ import { GenerationPage } from "./GenerationPage";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
+
+/** 把后端事件包装成浏览器 fetch 可消费的 NDJSON Response。 */
+function ndjsonResponse(events: object[]): Response {
+  const body = events.map((event) => JSON.stringify(event)).join("\n") + "\n";
+  return new Response(body, {
+    status: 200,
+    headers: { "Content-Type": "application/x-ndjson" },
+  });
+}
 
 describe("GenerationPage", () => {
   it("按真实业务规则设定四种图片类型的基础张数", () => {
@@ -158,8 +168,10 @@ describe("GenerationPage", () => {
     expect(within(parameters).getByRole("combobox", { name: "完整方案数量" })).toHaveTextContent("10");
   });
 
-  it("把 Logo 收进商品参考图标题旁的紧凑入口", async () => {
+  it("把 Logo 收进紧凑入口，并在成功添加后自动关闭设置面板", async () => {
     const user = userEvent.setup();
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:brand-logo");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
     render(
       <MemoryRouter>
         <GenerationPage mode="generate" />
@@ -174,6 +186,14 @@ describe("GenerationPage", () => {
     expect(screen.getByRole("dialog", { name: "添加品牌 Logo" })).toBeInTheDocument();
     expect(screen.getByLabelText("Logo 显示位置")).toHaveValue("bottom-right");
     expect(screen.getByText("默认使用克制尺寸和安全边距，不遮挡商品主体。")).toBeInTheDocument();
+
+    const logoFile = new File(["logo"], "brand-logo.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("选择 Logo 文件"), {
+      target: { files: [logoFile] },
+    });
+
+    expect(screen.queryByRole("dialog", { name: "添加品牌 Logo" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Logo 已添加" })).toBeInTheDocument();
   });
 
   it("在同一个输入区支持粘贴、拖入、查看和移除参考图", async () => {
@@ -232,7 +252,7 @@ describe("GenerationPage", () => {
     expect(within(composer).getByAltText("selected-product.jpg")).toBeInTheDocument();
 
     // 文字为空但已有参考图时允许直接提交，验证文字确实只是补充项。
-    await user.click(screen.getByRole("button", { name: "开始生成 6 张" }));
+    await user.click(screen.getByRole("button", { name: "生成 Prompt" }));
     expect(screen.queryByText("请先上传商品参考图，或填写补充文字要求")).not.toBeInTheDocument();
   });
 
@@ -280,5 +300,129 @@ describe("GenerationPage", () => {
     expect(screen.getByText("生图模板")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "更换模板" })).toBeInTheDocument();
     expect(screen.getByText(/不填写也可以生成/)).toBeInTheDocument();
+  });
+
+  it("先展示逐张 Prompt，用户确认前不开始真实生图", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/capabilities")) return new Response("{}", { status: 503 });
+      if (url.endsWith("/api/generations/plan")) {
+        return ndjsonResponse([
+          { type: "job_started", job_id: "plan-job", status: "planning" },
+          {
+            type: "plan_ready",
+            job_id: "plan-job",
+            variant_index: 1,
+            status: "ready",
+            data: {
+              plan: {
+                global_consistency_prompt: "整套保持同一商品与橙白配色",
+                image_prompts: Array.from({ length: 6 }, (_, index) => ({
+                  index: index + 1,
+                  role: `role_${index + 1}`,
+                  title: index === 0 ? "商品主视觉" : `第 ${index + 1} 张`,
+                  prompt: index === 0 ? "白底居中展示商品主视觉" : `生成第 ${index + 1} 张商品图`,
+                })),
+              },
+            },
+          },
+          { type: "job_completed", job_id: "plan-job", status: "planned" },
+        ]);
+      }
+      throw new Error("确认前不应调用真实生图");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter>
+        <GenerationPage mode="generate" />
+      </MemoryRouter>,
+    );
+    await user.type(screen.getByRole("textbox", { name: "补充文字要求（选填）" }), "白色咖啡杯");
+    await user.click(screen.getByRole("button", { name: /生成 Prompt|开始生成 6 张/ }));
+
+    const review = await screen.findByLabelText("生图 Prompt 确认");
+    expect(within(review).getByText("白底居中展示商品主视觉")).toBeInTheDocument();
+    expect(within(review).getByRole("button", { name: "确认 Prompt，开始生成 6 张" })).toBeInTheDocument();
+    const generationBodies = fetchMock.mock.calls
+      .filter((call) => String(call[0]).includes("/api/generations/plan"))
+      .map((call) => JSON.parse(String(call[1]?.body)) as { planning_only?: boolean });
+    expect(generationBodies).toEqual([expect.objectContaining({ planning_only: true })]);
+  });
+
+  it("可以只给不满意的一张填写意见并让 AI 重写 Prompt", async () => {
+    const user = userEvent.setup();
+    let streamCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/capabilities")) return new Response("{}", { status: 503 });
+      if (url.endsWith("/api/generations/refine-prompt")) {
+        return new Response(JSON.stringify({
+          index: 1,
+          role: "hero",
+          title: "商品主视觉",
+          prompt: "改为俯拍构图，并增加三种颜色",
+          negative_prompt: "不要改变商品结构",
+          visible_text: [],
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      streamCalls += 1;
+      if (streamCalls === 1) {
+        return ndjsonResponse([
+          { type: "job_started", job_id: "plan-job", status: "planning" },
+          {
+            type: "plan_ready",
+            job_id: "plan-job",
+            variant_index: 1,
+            data: {
+              plan: {
+                global_consistency_prompt: "保持商品一致",
+                image_prompts: [{
+                  index: 1,
+                  role: "hero",
+                  title: "商品主视觉",
+                  prompt: "正面居中展示商品",
+                }],
+              },
+            },
+          },
+          { type: "job_completed", job_id: "plan-job", status: "planned" },
+        ]);
+      }
+      return ndjsonResponse([
+        { type: "job_started", job_id: "image-job", status: "generating" },
+        { type: "job_completed", job_id: "image-job", status: "completed", data: { completed: 0, failed: 0 } },
+      ]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter>
+        <GenerationPage mode="generate" />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole("button", { name: "主图，1张每版" }));
+    await user.type(screen.getByRole("textbox", { name: "补充要求（选填）" }), "棒球帽");
+    await user.click(screen.getByRole("button", { name: /生成 Prompt|开始生成 1 张/ }));
+
+    const review = await screen.findByLabelText("生图 Prompt 确认");
+    await user.click(within(review).getByRole("button", { name: "修改第 1 张 Prompt" }));
+    await user.type(within(review).getByRole("textbox", { name: "第 1 张改进意见" }), "改成俯拍，并展示三种颜色");
+    await user.click(within(review).getByRole("button", { name: "AI 重新优化第 1 张 Prompt" }));
+
+    expect(await within(review).findByText("改为俯拍构图，并增加三种颜色")).toBeInTheDocument();
+    await user.click(within(review).getByRole("button", { name: "确认 Prompt，开始生成 1 张" }));
+
+    const executeCall = fetchMock.mock.calls.find((call) => {
+      if (!String(call[0]).includes("/api/generations/stream")) return false;
+      const body = JSON.parse(String(call[1]?.body)) as { confirmed_plans?: unknown[] };
+      return Array.isArray(body.confirmed_plans);
+    });
+    expect(executeCall).toBeDefined();
+    const executeBody = JSON.parse(String(executeCall?.[1]?.body)) as {
+      confirmed_plans: Array<{ image_prompts: Array<{ prompt: string }> }>;
+    };
+    expect(executeBody.confirmed_plans[0].image_prompts[0].prompt).toBe("改为俯拍构图，并增加三种颜色");
   });
 });

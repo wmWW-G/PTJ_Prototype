@@ -26,6 +26,8 @@ class FakePlanner:
     def __init__(self) -> None:
         self.analysis_reference_names: list[str] = []
         self.last_visual_template: VisualTemplateDefinition | None = None
+        self.analysis_calls = 0
+        self.plan_calls = 0
 
     async def analyze_product(
         self,
@@ -35,6 +37,7 @@ class FakePlanner:
     ) -> ProductContext:
         """记录商品分析收到的图片，并返回固定商品上下文。"""
 
+        self.analysis_calls += 1
         self.analysis_reference_names = [reference.name for reference in references]
 
         return ProductContext(
@@ -52,6 +55,7 @@ class FakePlanner:
     ) -> PromptPlan:
         """根据真实模板返回同数量 Prompt。"""
 
+        self.plan_calls += 1
         self.last_visual_template = visual_template
 
         return PromptPlan(
@@ -155,6 +159,67 @@ def _orchestrator(
 
 
 @pytest.mark.asyncio
+async def test_planning_only_returns_prompts_without_calling_image_provider() -> None:
+    """Prompt 确认阶段只能调用 Planner，绝不能提前消耗图片模型额度。"""
+
+    provider = FakeProvider()
+    request = GenerationRequest(
+        image_type="set",
+        template_id="product_set_01",
+        model="nano_banana_2",
+        aspect_ratio="1:1",
+        resolution="2K",
+        user_requirement="生成六张商品套图",
+        planning_only=True,
+    )
+
+    events = [event async for event in _orchestrator(provider).stream(request)]
+
+    assert provider.calls == []
+    assert [event.type for event in events].count("plan_ready") == 1
+    assert not any(event.type in {"variant_started", "anchor_started", "image_started"} for event in events)
+    assert events[-1].type == "job_completed"
+    assert events[-1].status == "planned"
+
+
+@pytest.mark.asyncio
+async def test_confirmed_plans_skip_planner_and_drive_image_generation() -> None:
+    """用户确认后的 Prompt 必须直接执行，不能在生图前被 Planner 偷偷重写。"""
+
+    provider = FakeProvider()
+    planner = FakePlanner()
+    request = GenerationRequest(
+        image_type="main",
+        template_id="main_01",
+        model="nano_banana_2",
+        aspect_ratio="1:1",
+        resolution="2K",
+        user_requirement="生成商品主图",
+        confirmed_plans=[
+            PromptPlan(
+                global_consistency_prompt="保持商品真实外观",
+                image_prompts=[
+                    {
+                        "index": 1,
+                        "role": "hero",
+                        "title": "商品主视觉",
+                        "prompt": "这是用户确认后的最终生图 Prompt",
+                    }
+                ],
+            )
+        ],
+    )
+
+    events = [event async for event in _orchestrator(provider, planner).stream(request)]
+
+    assert planner.analysis_calls == 0
+    assert planner.plan_calls == 0
+    assert len(provider.calls) == 1
+    assert "这是用户确认后的最终生图 Prompt" in provider.calls[0].prompt
+    assert any(event.type == "anchor_completed" for event in events)
+
+
+@pytest.mark.asyncio
 async def test_reference_mode_uses_original_references_for_every_slot() -> None:
     """有图套图的六个槽位必须始终共享用户原图。"""
 
@@ -213,6 +278,10 @@ async def test_logo_is_appended_without_entering_product_analysis() -> None:
     assert provider.calls[0].references == ["original", "brand-logo"]
     assert "最后一张参考图是用户上传的品牌 Logo" in provider.calls[0].prompt
     assert "放在右上角" in provider.calls[0].prompt
+    plan_event = next(event for event in events if event.type == "plan_ready")
+    visible_global_prompt = plan_event.data["plan"]["global_consistency_prompt"]
+    assert "最后一张参考图是用户上传的品牌 Logo" in visible_global_prompt
+    assert "放在右上角" in visible_global_prompt
     assert any(event.type == "job_completed" for event in events)
 
 

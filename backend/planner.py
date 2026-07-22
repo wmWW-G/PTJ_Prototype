@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from .domain import (
     BinaryAsset,
     ImageModel,
+    ImagePrompt,
     ProductContext,
     PromptPlan,
     PromptPlanError,
@@ -334,3 +335,90 @@ class PromptPlanner:
         raise PromptPlanError(
             f"Prompt Planner 连续两次未返回 {len(template.slots)} 个连续槽位"
         )
+
+    async def refine_image_prompt(
+        self,
+        *,
+        image_prompt: ImagePrompt,
+        global_consistency_prompt: str,
+        user_requirement: str,
+        feedback: str,
+        language: str,
+        target_model: ImageModel,
+    ) -> ImagePrompt:
+        """根据用户意见只重写一张图的生图 Prompt。
+
+        槽位序号、职责和标题由服务器保留，LLM 只能更新正向 Prompt、负向
+        Prompt 和可见文案，避免用户修改一张图时破坏整套结构。
+
+        Args:
+            image_prompt: 当前单张结构化 Prompt。
+            global_consistency_prompt: 整套图片必须共同遵守的一致性约束。
+            user_requirement: 用户最初的商品与画面要求。
+            feedback: 用户对当前这张图的改进意见。
+            language: 可见文案与 Prompt 使用的语言。
+            target_model: 最终图片模型，用于调整 Prompt 表达方式。
+
+        Returns:
+            保留原槽位身份、内容已经重写的 ``ImagePrompt``。
+
+        Raises:
+            PromptPlanError: 连续两次没有返回合法结构时抛出。
+            ProviderError: Google 请求失败时由底层透传。
+        """
+
+        instruction = {
+            "task": "根据用户改进意见，重写单张电商生图 Prompt",
+            "rules": [
+                "只修改当前图片，不改变它的职责和标题",
+                "继续遵守整套商品身份、品牌、配色和事实约束",
+                "不得虚构参数、认证、销量、产能、客户或测试结果",
+                "Prompt 必须独立完整，可直接交给目标图片模型",
+                "可见文字只能来自用户明确提供的内容",
+            ],
+            "language": language,
+            "target_model": target_model,
+            "user_requirement": user_requirement,
+            "global_consistency_prompt": global_consistency_prompt,
+            "current_image_prompt": image_prompt.model_dump(),
+            "user_feedback": feedback,
+            "output_schema": {
+                "prompt": "string",
+                "negative_prompt": "string",
+                "visible_text": ["string"],
+            },
+        }
+
+        for attempt in range(2):
+            request_instruction = dict(instruction)
+            if attempt:
+                request_instruction["repair"] = (
+                    "上次结构错误。只输出包含 prompt、negative_prompt、visible_text 的 JSON 对象。"
+                )
+            response = await self._client.generate_content(
+                self._model,
+                {
+                    "contents": [
+                        {
+                            "role": "user",
+                            "parts": [
+                                {"text": json.dumps(request_instruction, ensure_ascii=False)}
+                            ],
+                        }
+                    ],
+                    "generationConfig": {"responseMimeType": "application/json"},
+                },
+            )
+            try:
+                payload = _decode_json_object(_extract_text(response))
+                return ImagePrompt.model_validate(
+                    {
+                        **payload,
+                        "index": image_prompt.index,
+                        "role": image_prompt.role,
+                        "title": image_prompt.title,
+                    }
+                )
+            except (ValidationError, ValueError, PromptPlanError):
+                continue
+        raise PromptPlanError("Prompt Planner 连续两次未返回合法的单张优化结果")

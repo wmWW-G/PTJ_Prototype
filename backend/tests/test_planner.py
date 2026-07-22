@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from backend.domain import ProductContext, PromptPlanError
+from backend.domain import ImagePrompt, ProductContext, PromptPlanError
 from backend.planner import PromptPlanner
 from backend.templates import get_template
 from backend.visual_templates import get_visual_template
@@ -253,3 +253,40 @@ async def test_procurement_listing_template_binds_ten_b2b_roles() -> None:
         "品质控制与信任背书",
         "包装定制与合作流程",
     ]
+
+
+@pytest.mark.asyncio
+async def test_refine_image_prompt_applies_feedback_without_changing_slot_identity() -> None:
+    """单张优化必须重写画面内容，同时保持该张图的序号、职责和标题。"""
+
+    client = FakeGoogleClient([
+        {
+            "prompt": "改为俯拍构图，增加三种颜色并保持商品主体一致",
+            "negative_prompt": "不要改变商品结构",
+            "visible_text": ["3 COLORS"],
+        }
+    ])
+    planner = PromptPlanner(client=client, model="gemini-3.5-flash")
+    original = ImagePrompt(
+        index=4,
+        role="color_options",
+        title="颜色款式",
+        prompt="展示两种颜色",
+        negative_prompt="不要改变商品结构",
+    )
+
+    refined = await planner.refine_image_prompt(
+        image_prompt=original,
+        global_consistency_prompt="整套保持黑白极简风格",
+        user_requirement="生成帽子商品套图",
+        feedback="颜色太少，改成俯拍并展示三种颜色",
+        language="zh-CN",
+        target_model="gpt_image_2_openrouter",
+    )
+
+    assert refined.index == 4
+    assert refined.role == "color_options"
+    assert refined.title == "颜色款式"
+    assert refined.prompt == "改为俯拍构图，增加三种颜色并保持商品主体一致"
+    request_text = client.requests[0][1]["contents"][0]["parts"][0]["text"]
+    assert "颜色太少，改成俯拍并展示三种颜色" in request_text

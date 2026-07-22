@@ -13,6 +13,8 @@ from .domain import (
     MODEL_ASPECT_RATIOS,
     MODEL_RESOLUTIONS,
     GenerationRequest,
+    ImagePrompt,
+    PromptRefinementRequest,
     StreamEvent,
 )
 from .google_client import GoogleVertexClient
@@ -50,6 +52,9 @@ class OrchestratorProtocol(Protocol):
 
     async def stream(self, request: GenerationRequest) -> AsyncIterator[StreamEvent]:
         """逐条产生任务事件。"""
+
+    async def refine_prompt(self, request: PromptRefinementRequest) -> ImagePrompt:
+        """根据用户意见重写一张结构化 Prompt。"""
 
 
 def _build_orchestrator(settings: Settings, storage: BlobStorage) -> GenerationOrchestrator:
@@ -135,6 +140,36 @@ def create_app(
         allowed_host=runtime_settings.blob_allowed_host,
     )
     runtime_orchestrator = orchestrator
+
+    def get_runtime_orchestrator(model: str) -> OrchestratorProtocol:
+        """检查当前模型配置并按需初始化共享编排器。
+
+        Args:
+            model: 当前请求选择的图片模型；Prompt 优化也沿用它调整表达。
+
+        Returns:
+            测试替身或已经组装完成的生产编排器。
+
+        Raises:
+            HTTPException: 配置缺失或生产依赖初始化失败时抛出。
+        """
+
+        nonlocal runtime_orchestrator
+        missing = runtime_settings.missing_for_model(model)  # type: ignore[arg-type]
+        if missing:
+            raise HTTPException(
+                status_code=503,
+                detail={"message": "真实生图尚未完成服务端配置", "missing": missing},
+            )
+        if runtime_orchestrator is None:
+            try:
+                if not isinstance(runtime_storage, BlobStorage):
+                    raise RuntimeError("生产编排器需要 BlobStorage")
+                runtime_orchestrator = _build_orchestrator(runtime_settings, runtime_storage)
+            except Exception as exc:  # noqa: BLE001 - 配置解析错误需转成明确 503。
+                logger.exception("真实生图服务初始化失败")
+                raise HTTPException(status_code=503, detail="真实生图服务初始化失败") from exc
+        return runtime_orchestrator
 
     app = FastAPI(
         title="批图匠真实生图 API",
@@ -275,30 +310,12 @@ def create_app(
             HTTPException: 服务器缺少必要 Vercel 环境变量或依赖组装失败时抛出。
         """
 
-        nonlocal runtime_orchestrator
-        # 配置按当前供应商检查，避免 OpenRouter 暂未配置时连带阻断两个 Google
-        # 图片模型。Planner 和 Blob 是三款模型的共同依赖，因此始终检查。
-        missing = runtime_settings.missing_for_model(request.model)
-        if missing:
-            raise HTTPException(
-                status_code=503,
-                detail={"message": "真实生图尚未完成服务端配置", "missing": missing},
-            )
-        if runtime_orchestrator is None:
-            try:
-                # 默认存储一定是 BlobStorage；只有测试替身才会同时注入 orchestrator。
-                if not isinstance(runtime_storage, BlobStorage):
-                    raise RuntimeError("生产编排器需要 BlobStorage")
-                runtime_orchestrator = _build_orchestrator(runtime_settings, runtime_storage)
-            except Exception as exc:  # noqa: BLE001 - 配置解析错误需转成明确 503。
-                logger.exception("真实生图服务初始化失败")
-                raise HTTPException(status_code=503, detail="真实生图服务初始化失败") from exc
+        active_orchestrator = get_runtime_orchestrator(request.model)
 
         async def event_lines() -> AsyncIterator[str]:
             """把 Pydantic 事件编码为一行一个 JSON。"""
 
-            assert runtime_orchestrator is not None
-            async for event in runtime_orchestrator.stream(request):
+            async for event in active_orchestrator.stream(request):
                 yield event.model_dump_json(exclude_none=True) + "\n"
 
         return StreamingResponse(
@@ -306,6 +323,64 @@ def create_app(
             media_type="application/x-ndjson",
             headers={"Cache-Control": "no-cache, no-transform"},
         )
+
+    @app.post("/api/generations/plan")
+    async def plan_generation(request: GenerationRequest) -> StreamingResponse:
+        """只规划逐张生图 Prompt，不允许调用图片生成模型。
+
+        该路由与真实生图路由分离，并在服务器端强制改写
+        ``planning_only``，因此不依赖浏览器是否正确传参。对旧版后端请求
+        该新地址时只会得到 404，不会误落入真实生图流程。
+
+        Args:
+            request: 待规划的统一生图请求；服务器会忽略客户端传入的
+                ``planning_only`` 和 ``confirmed_plans`` 值。
+
+        Returns:
+            ``application/x-ndjson`` 流，包含 ``plan_ready`` 与最终
+            ``job_completed(planned)`` 事件。
+
+        Raises:
+            HTTPException: 服务器缺少 Planner 所需配置或依赖组装失败时抛出。
+        """
+
+        planning_request = request.model_copy(
+            update={"planning_only": True, "confirmed_plans": []},
+        )
+        active_orchestrator = get_runtime_orchestrator(planning_request.model)
+
+        async def event_lines() -> AsyncIterator[str]:
+            """把 Prompt 规划事件编码为一行一个 JSON。"""
+
+            async for event in active_orchestrator.stream(planning_request):
+                yield event.model_dump_json(exclude_none=True) + "\n"
+
+        return StreamingResponse(
+            event_lines(),
+            media_type="application/x-ndjson",
+            headers={"Cache-Control": "no-cache, no-transform"},
+        )
+
+    @app.post("/api/generations/refine-prompt", response_model=ImagePrompt)
+    async def refine_generation_prompt(request: PromptRefinementRequest) -> ImagePrompt:
+        """让 Prompt Planner 根据用户意见重写一张图片的提示词。
+
+        Args:
+            request: 当前单图 Prompt、整套约束、原需求和改进意见。
+
+        Returns:
+            保留槽位身份、内容已经优化的结构化 Prompt。
+
+        Raises:
+            HTTPException: 配置缺失、服务初始化或 Planner 优化失败时抛出。
+        """
+
+        active_orchestrator = get_runtime_orchestrator(request.target_model)
+        try:
+            return await active_orchestrator.refine_prompt(request)
+        except Exception as exc:  # noqa: BLE001 - 不向前端泄露供应商响应细节。
+            logger.exception("单张 Prompt 优化失败")
+            raise HTTPException(status_code=502, detail="AI 没能完成这张 Prompt 的优化，请重试") from exc
 
     return app
 

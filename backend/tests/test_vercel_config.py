@@ -30,6 +30,8 @@ def test_vercel_uses_explicit_api_entrypoints_without_rewrite() -> None:
         Path("api/capabilities.py"),
         Path("api/uploads.py"),
         Path("api/generations/stream.py"),
+        Path("api/generations/plan.py"),
+        Path("api/generations/refine-prompt.py"),
     }
 
     assert all(path.is_file() for path in entrypoints)

@@ -212,6 +212,17 @@ class PromptPlan(BaseModel):
     image_prompts: list[ImagePrompt] = Field(min_length=1)
 
 
+class PromptRefinementRequest(BaseModel):
+    """用户针对单张图片提交的 Prompt 优化请求。"""
+
+    image_prompt: ImagePrompt
+    global_consistency_prompt: str = Field(min_length=1, max_length=12000)
+    user_requirement: str = Field(min_length=1, max_length=4000)
+    feedback: str = Field(min_length=1, max_length=1000)
+    language: str = "zh-CN"
+    target_model: ImageModel
+
+
 class ImageSpec(BaseModel):
     """与具体供应商无关的单张图片生成规格。"""
 
@@ -248,6 +259,9 @@ class GenerationRequest(BaseModel):
     variant_count: int = Field(default=1, ge=1, le=10)
     user_requirement: str = Field(min_length=1, max_length=4000)
     supplemental_info: dict[str, str] = Field(default_factory=dict)
+    # 首次请求只让 LLM 规划 Prompt，不调用图片模型；用户确认后再把计划原样带回。
+    planning_only: bool = False
+    confirmed_plans: list[PromptPlan] = Field(default_factory=list, max_length=10)
     # 自定义模板只提交“来源模板 + 职责下标”。真实标题和构图由服务器登记表恢复，
     # 因而前端不能借此把任意文字注入视觉模板定义。
     custom_visual_roles: list[CustomVisualRoleSelection] = Field(
@@ -362,6 +376,10 @@ class GenerationRequest(BaseModel):
             raise ValueError(f"{self.model} 不支持画面比例 {self.aspect_ratio}")
         if self.resolution not in MODEL_RESOLUTIONS[self.model]:
             raise ValueError(f"{self.model} 不支持清晰度 {self.resolution}")
+        if self.planning_only and self.confirmed_plans:
+            raise ValueError("只规划 Prompt 时不能同时提交已确认计划")
+        if self.confirmed_plans and len(self.confirmed_plans) != self.variant_count:
+            raise ValueError("已确认 Prompt 方案数量必须与完整方案数量一致")
         return self
 
 

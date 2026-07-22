@@ -1,5 +1,63 @@
 # Design QA
 
+## 2026-07-22 单图 AI 修改与模板提取验收
+
+- source visual truth: `/Users/garden/.codex/generated_images/019f82b8-3f6c-77e1-bcd3-992baed95fd8/exec-257a132e-56d0-4495-b97e-6c06e0d225f2.png`
+- browser-rendered implementation:
+  - `/Users/garden/YD/批图匠/design-qa-assets/custom-slot-editor-v1.png`
+  - `/Users/garden/YD/批图匠/design-qa-assets/custom-slot-editor-v2.png`
+  - `/Users/garden/YD/批图匠/design-qa-assets/custom-slot-editor-accepted.png`
+  - `/Users/garden/YD/批图匠/design-qa-assets/custom-slot-editor-700-v2.png`
+- combined comparison evidence: `/Users/garden/YD/批图匠/design-qa-assets/source-vs-implementation.png`
+- route: `http://127.0.0.1:5173/PTJ_Prototype/#/generation`
+- viewport and normalization:
+  - source pixels: 1487 × 1058。
+  - implementation pixels / CSS viewport: 1440 × 1024，device scale factor 1。
+  - 对比时把源图等比校准到 1440 × 1024，实现截图保持 1440 × 1024；合并证据为 2880 × 1024。
+- state: 批量生图 / 套图 / 自定义套图 / 第 4 张 Logo 工艺展示 / AI 候选图对比 / 已采用并保存个人模板。
+
+### Full-view comparison evidence
+
+- 实现保持源稿的“大尺寸右侧抽屉 + 背景降暗”框架，自定义状态宽度为 86vw，并在 1440px 桌面视口限制为 1180px；模板列表仍使用原有窄抽屉，不扩大无关界面。
+- 顶部依次为返回整套、居中槽位标题、AI 状态与关闭按钮；下方只保留 6 张缩略导航、原图 / 新版本对比、唯一自然语言输入框、模板提取提示和三个底部动作。
+- 实现图片直接使用用户提供的三张棒球帽参考图，没有从整屏设计稿裁切素材，也没有使用占位图、CSS 图形或手绘 SVG。图片内容与源稿保持同一商品、白底、高信息密度和 Logo 工艺展示方向；参考图自带英文标题属于真实演示内容，不作为固定模板文案保存。
+
+### Focused region comparison evidence
+
+- 合并证据中已并列检查顶栏、缩略图选中态、双图对比、自然语言输入、真实数据提示、模板提取入口和底部按钮。重要文字在原始 1440px 截图可直接辨认，因此未额外裁切。
+- 原图与候选图保持相同方形比例；候选图使用 2px 橙色描边和右上角确认图标，缩略图第 4 张同步使用橙色选中态。
+- 用户只输入修改意图，界面没有标题、卖点或正文手填项；“保存为我的模板”在采用前禁用，采用后才允许保存。
+
+### Required fidelity surfaces
+
+- 字体与排版：沿用项目现有中文系统字体与 9–18px 产品字号；主标题、状态、图片标签、输入内容和辅助提示层级清楚，无截断或异常换行。
+- 间距与布局节奏：桌面使用 6 张横向缩略图和双列对比，内容最大宽度 1000px；抽屉留白充足，底部操作固定且不遮挡桌面内容。
+- 颜色与视觉令牌：继续使用批图匠橙色、暖白、浅棕灰边框和绿色成功状态；没有引入新的紫色、渐变或重阴影系统。
+- 图片质量与资产保真：三张 1024 × 1024 用户参考图保持 1:1、完整显示且无拉伸；未使用临时网络资源、占位图或代码绘制替代。
+- 文案与内容：唯一输入文案明确“文案由 AI 生成”；认证、MOQ、材质等内容只使用已确认资料，避免把图片中的未知数字沉淀为模板事实。
+- 图标：返回、关闭、AI、刷新、确认和收藏均复用项目既有图标库，尺寸与描边一致，并配有可访问名称。
+- 响应式：700 × 900 复验中抽屉占满视口、文档无横向溢出；缩略图变为 4 列，双图改为单列滚动，底部操作改为三行，仍可完成核心流程。
+- 可访问性：抽屉、对比区、导航和输入均有语义标签；所有关键动作为原生按钮，采用前保存按钮具有真实 disabled 状态，输入支持 Enter 触发重新生成。
+
+### Primary interaction verification
+
+- 打开模板选择 → 自定义套图 → 第 4 张 Logo 工艺展示：通过。
+- 自然语言输入、重新生成和“再生成一个”均可操作；浏览器实测候选图片 URL 从 `cap-logo-crafts.jpg` 切换到 `cap-detail-callouts.jpg`：通过。
+- 采用候选图后显示 AI 特征提取成功状态，并启用“保存为我的模板”：通过。
+- 保存后按钮切换为“已保存到我的模板”；返回整套后该槽位显示“已采用 AI 新版本”：通过。
+- 浏览器 console error / warning：0。
+- 自动化测试：48 / 48 通过；TypeScript 检查与 Vite Production 构建通过。
+
+### Findings and comparison history
+
+1. [P2 已修复] 首轮实现只有返回箭头，没有显示源稿中的“返回整套”文字，降低了大抽屉中的导航确定性；已补充可见文字并在 `custom-slot-editor-v2.png` 复验。
+2. 第二轮未发现遗留 P0 / P1 / P2 问题。
+3. [P3] 700px 窄屏的六张缩略图分为两行，信息密度高于桌面；核心操作仍完整可用，可在未来移动端专稿中进一步收紧缩略图高度。
+
+final result: passed
+
+---
+
 ## 2026-07-20 套图与详情图自定义模板验收
 
 - source visual truth:

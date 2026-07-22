@@ -17,6 +17,7 @@ from .domain import (
     ImageSpec,
     ProductContext,
     PromptPlan,
+    PromptRefinementRequest,
     ProviderError,
     ReferenceAsset,
     StreamEvent,
@@ -59,6 +60,18 @@ class PlannerProtocol(Protocol):
         supplemental_info: dict[str, str],
     ) -> PromptPlan:
         """生成单版 Prompt 计划。"""
+
+    async def refine_image_prompt(
+        self,
+        *,
+        image_prompt: ImagePrompt,
+        global_consistency_prompt: str,
+        user_requirement: str,
+        feedback: str,
+        language: str,
+        target_model: str,
+    ) -> ImagePrompt:
+        """根据用户意见重写一张图片的 Prompt。"""
 
 
 class ProviderRouterProtocol(Protocol):
@@ -131,6 +144,69 @@ class GenerationOrchestrator:
         self._providers = providers
         self._storage = storage
         self._limiters = limiters
+
+    async def refine_prompt(self, request: PromptRefinementRequest) -> ImagePrompt:
+        """调用 Planner 优化单张 Prompt，并保留服务器确认过的槽位身份。
+
+        Args:
+            request: 当前 Prompt、全局约束和用户改进意见。
+
+        Returns:
+            可直接替换到原方案中的单张结构化 Prompt。
+
+        Raises:
+            PromptPlanError: Planner 连续返回非法结构时透传。
+            ProviderError: 文本模型调用失败时透传。
+        """
+
+        return await self._planner.refine_image_prompt(
+            image_prompt=request.image_prompt,
+            global_consistency_prompt=request.global_consistency_prompt,
+            user_requirement=request.user_requirement,
+            feedback=request.feedback,
+            language=request.language,
+            target_model=request.target_model,
+        )
+
+    @staticmethod
+    def _normalize_confirmed_plan(
+        plan: PromptPlan,
+        *,
+        template: TemplateDefinition,
+        visual_template: VisualTemplateDefinition,
+    ) -> PromptPlan:
+        """校验已确认计划的槽位数量，并恢复服务器可信的职责与标题。
+
+        Args:
+            plan: 前端确认后带回的单版 Prompt 计划。
+            template: 当前图片类型对应的服务器结构模板。
+            visual_template: 当前选择的视觉模板。
+
+        Returns:
+            Prompt 内容保持不变、槽位身份已经规范化的计划。
+
+        Raises:
+            ValueError: 槽位数量或索引与服务器模板不一致时抛出。
+        """
+
+        expected_indices = [slot.index for slot in template.slots]
+        actual_indices = [item.index for item in plan.image_prompts]
+        if actual_indices != expected_indices:
+            raise ValueError("已确认 Prompt 的槽位数量或顺序与当前模板不一致")
+        normalized_prompts = [
+            item.model_copy(
+                update={
+                    "role": template.slots[position].role,
+                    "title": (
+                        visual_template.role_highlights[position]
+                        if position < len(visual_template.role_highlights)
+                        else template.slots[position].title
+                    ),
+                }
+            )
+            for position, item in enumerate(plan.image_prompts)
+        ]
+        return plan.model_copy(update={"image_prompts": normalized_prompts})
 
     async def _execute_image(
         self,
@@ -338,8 +414,11 @@ class GenerationOrchestrator:
                 raise ValueError("图片类型与服务器模板不匹配")
             if request.image_type not in visual_template.image_types:
                 raise ValueError("当前生图模板不适用于所选图片类型")
-            provider = self._providers.get(request.model)
-            limiter = self._limiters[request.model]
+            provider = None
+            limiter = None
+            if not request.planning_only:
+                provider = self._providers.get(request.model)
+                limiter = self._limiters[request.model]
 
             # 用户自己的产品素材只下载一次，并交给 Planner 提取真实商品特征。
             product_references = [
@@ -379,14 +458,16 @@ class GenerationOrchestrator:
                         name="brand-logo",
                     )
                 )
-            yield StreamEvent(type="planning", job_id=job_id, status="planning")
-            context = await self._planner.analyze_product(
-                user_requirement=request.user_requirement,
-                references=product_references,
-                language=request.language,
-                visual_template=visual_template,
-                supplemental_info=supplemental_info,
-            )
+            context = None
+            if not request.confirmed_plans:
+                yield StreamEvent(type="planning", job_id=job_id, status="planning")
+                context = await self._planner.analyze_product(
+                    user_requirement=request.user_requirement,
+                    references=product_references,
+                    language=request.language,
+                    visual_template=visual_template,
+                    supplemental_info=supplemental_info,
+                )
             spec = ImageSpec(
                 model=request.model,
                 aspect_ratio=request.aspect_ratio,
@@ -397,24 +478,33 @@ class GenerationOrchestrator:
             overall_success = 0
             overall_failed = 0
             for variant_index in range(1, request.variant_count + 1):
-                plan = await self._planner.plan_variant(
-                    template=template,
-                    context=context,
-                    user_requirement=request.user_requirement,
-                    language=request.language,
-                    target_model=request.model,
-                    variant_index=variant_index,
-                    visual_template=visual_template,
-                    supplemental_info=supplemental_info,
-                )
+                if request.confirmed_plans:
+                    plan = self._normalize_confirmed_plan(
+                        request.confirmed_plans[variant_index - 1],
+                        template=template,
+                        visual_template=visual_template,
+                    )
+                else:
+                    assert context is not None
+                    plan = await self._planner.plan_variant(
+                        template=template,
+                        context=context,
+                        user_requirement=request.user_requirement,
+                        language=request.language,
+                        target_model=request.model,
+                        variant_index=variant_index,
+                        visual_template=visual_template,
+                        supplemental_info=supplemental_info,
+                    )
                 global_prompt = plan.global_consistency_prompt
-                if style_references:
-                    global_prompt += (
+                style_reference_constraint = (
                         "\n\n参考图片序列中，用户产品素材之后、品牌 Logo 之前的图片是参考设计图。"
                         "只能学习其构图层级、镜头视角、光线、配色和留白节奏；不得复制其中的"
                         "商品外观、品牌、Logo、文字、水印或受保护的独特图形。最终商品主体必须"
                         "严格来自用户产品素材；没有产品素材时，严格来自用户文字要求。"
-                    )
+                )
+                if style_references and style_reference_constraint.strip() not in global_prompt:
+                    global_prompt += style_reference_constraint
                 if logo_reference is not None:
                     position_names = {
                         "top-left": "左上角",
@@ -423,11 +513,18 @@ class GenerationOrchestrator:
                         "bottom-right": "右下角",
                         "center": "画面中央",
                     }
-                    global_prompt += (
+                    logo_constraint = (
                         "\n\n最后一张参考图是用户上传的品牌 Logo。必须原样保留其文字、"
                         "颜色、比例和图形结构，不得重绘、改写或生成其他 Logo；将它以克制尺寸"
                         f"放在{position_names[request.logo_position]}，保留安全边距，不遮挡商品主体和卖点。"
                     )
+                    if logo_constraint.strip() not in global_prompt:
+                        global_prompt += logo_constraint
+                # 用户审核界面必须展示图片模型最终会收到的完整全局 Prompt，而不是
+                # 隐藏参考设计图和 Logo 约束。确认后带回时，上方幂等检查避免重复拼接。
+                plan = plan.model_copy(
+                    update={"global_consistency_prompt": global_prompt}
+                )
                 yield StreamEvent(
                     type="plan_ready",
                     job_id=job_id,
@@ -435,6 +532,11 @@ class GenerationOrchestrator:
                     status="ready",
                     data={"plan": plan.model_dump(), "slot_count": len(template.slots)},
                 )
+                if request.planning_only:
+                    continue
+
+                assert provider is not None
+                assert limiter is not None
                 yield StreamEvent(
                     type="variant_started",
                     job_id=job_id,
@@ -555,6 +657,15 @@ class GenerationOrchestrator:
                     status=variant_status,
                     data={"completed": variant_success, "failed": variant_failed},
                 )
+
+            if request.planning_only:
+                yield StreamEvent(
+                    type="job_completed",
+                    job_id=job_id,
+                    status="planned",
+                    data={"planned_variants": request.variant_count},
+                )
+                return
 
             final_status = (
                 "completed"

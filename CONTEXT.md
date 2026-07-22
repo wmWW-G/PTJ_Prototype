@@ -9,12 +9,13 @@
 前端入口是 `src/main.tsx` 和 `src/App.tsx`。统一生图页面位于 `#/generation`，由 `src/features/generation/GenerationPage.tsx` 提交：
 
 1. 图片为选填；如果用户上传图片，前端先逐张调用 `POST /api/uploads`，图片保存到 Vercel Blob。主图会把“参考设计图”写入 `style_reference_assets`，把用户自己的“产品素材图”写入 `reference_assets`，两组图片职责不可混用。
-2. 前端调用 `POST /api/generations/stream`。
-3. FastAPI 根据 `style_reference_assets`、`reference_assets` 或 `logo_asset` 是否存在自动确定 `text-to-image` 或 `image-to-image`，前端不再提交 `mode`。
-4. FastAPI 同时读取“张数/职责模板”和“视觉/信息模板”，调用 Gemini Prompt Planner 生成结构化计划。
-5. `GenerationOrchestrator` 按有图/无图依赖关系调用模型 Adapter。
-6. 结果图写入 Vercel Blob，并通过 `application/x-ndjson` 逐张返回。
-7. 前端归并事件并写入 LocalStorage 历史；任务仍保存实际模式，便于历史详情说明是否使用了参考图。
+2. 前端先调用独立的 `POST /api/generations/plan`；FastAPI 在服务器端强制 `planning_only=true`，只调用 Gemini Prompt Planner，逐版返回 `plan_ready`，不得调用图片模型。
+3. 前端在右侧 `PromptReviewPanel` 展示每张图片的完整 Prompt。用户可以确认整套，也可以针对任意一张填写改进意见，通过 `POST /api/generations/refine-prompt` 让 LLM 只重写这一张。
+4. 用户确认后，前端把最终版本通过 `confirmed_plans` 原样带回 `POST /api/generations/stream`。后端校验槽位数量和顺序，并恢复服务器可信的 role/title；不得再次调用 Planner 改写 Prompt。
+5. FastAPI 根据 `style_reference_assets`、`reference_assets` 或 `logo_asset` 是否存在自动确定 `text-to-image` 或 `image-to-image`，前端不再提交 `mode`。
+6. `GenerationOrchestrator` 按有图/无图依赖关系调用模型 Adapter。
+7. 结果图写入 Vercel Blob，并通过 `application/x-ndjson` 逐张返回。
+8. 前端归并事件并写入 LocalStorage 历史；Prompt 确认前不创建历史生图任务，确认后才保存实际模式和结果。
 
 完整方案数量由下拉框选择，前后端统一允许 1–10 版；当前详情图单版最多 8 张，因此单任务最大输出为 80 张。
 
@@ -23,10 +24,13 @@
 - `GET /api/health`：脱敏配置状态。
 - `GET /api/capabilities`：模型、比例、分辨率、张数模板、视觉模板和上传限制。
 - `POST /api/uploads`：单张 PNG/JPEG/WebP，最大 4 MB。
+- `POST /api/generations/plan`：只返回逐张结构化 Prompt；后端强制禁止图片模型调用。
+- `POST /api/generations/stream`：用用户确认后的 `confirmed_plans` 执行真实生图并返回 NDJSON 事件。
+- `POST /api/generations/refine-prompt`：根据用户意见只重写一张结构化 Prompt，不调用图片模型。
 
 ## 关键模块
 
-- `api/health.py`、`api/capabilities.py`、`api/uploads.py`、`api/generations/stream.py`：Vite + FastAPI 混合部署的精确 Vercel 函数入口，全部复用同一个 `backend.app:app`。
+- `api/health.py`、`api/capabilities.py`、`api/uploads.py`、`api/generations/stream.py`、`api/generations/plan.py`、`api/generations/refine-prompt.py`：Vite + FastAPI 混合部署的精确 Vercel 函数入口，全部复用同一个 `backend.app:app`。
 - `backend/app.py`：FastAPI、CORS、路由和真实依赖组装。
 - `backend/domain.py`：统一请求、模板、Prompt、图片和流事件类型。
 - `backend/templates.py`：四种服务器模板，是单版张数的唯一事实来源。
@@ -36,11 +40,12 @@
 - `backend/limiter.py`：模型并发、RPM、供应商 `retry-after` 退避和错峰重试。
 - `backend/orchestrator.py`：有图全并发、无图基准图或独立构图分发、多方案循环。
 - `backend/storage.py`：Vercel Blob 上传、保存、URL 白名单和 SSRF 防护。
-- `src/features/generation/api.ts`：上传、Capabilities 和 NDJSON 客户端；统一请求不再携带 `mode`。
+- `src/features/generation/api.ts`：上传、Capabilities、Prompt 规划/单张重写与真实生图 NDJSON 客户端；统一请求不再携带 `mode`。
 - `src/features/generation/liveState.ts`：流事件纯函数归并。
 - `src/features/generation/components/ModelControls.tsx`：动态模型参数。
 - `src/features/generation/components/PromptImageComposer.tsx`：商品图、主图参考设计图、产品素材图、Logo 与补充文字输入；主图使用上下双图片区。
 - `src/features/generation/components/LiveResultsPanel.tsx`：逐张结果控制台。
+- `src/features/generation/components/PromptReviewPanel.tsx`：逐张 Prompt 审核、单张意见输入、AI 重写和最终确认入口。
 - `src/features/generation/components/VisualTemplatePicker.tsx`：模板摘要、右侧选择抽屉、每套模板的二级详情、同类职责自定义编排和动态选填信息。
 - `src/features/tasks/`：LocalStorage 历史和旧数据兼容。
 
@@ -50,10 +55,16 @@
 
 后端类型定义在 `backend/domain.py`，前端镜像定义在 `src/features/generation/liveTypes.ts`。
 
-主要任务事件：
+Prompt 规划阶段：
 
 ```text
-job_started → planning → plan_ready → variant_started
+job_started → planning → plan_ready（每版一条）→ job_completed(status=planned)
+```
+
+确认后的真实生图阶段：
+
+```text
+job_started → plan_ready（回显已确认计划）→ variant_started
 → anchor_started/anchor_completed（仅无图模式）
 → image_started/image_retrying/image_completed/image_failed
 → variant_completed → job_completed 或 job_failed
@@ -73,6 +84,7 @@ job_started → planning → plan_ready → variant_started
 - 改有图/无图并发关系：`backend/orchestrator.py`，必须先改测试。
 - 改比例和参数：Provider Adapter、`GET /api/capabilities` 和 ModelControls。
 - 改实时卡片：`liveTypes.ts`、`liveState.ts`、`LiveResultsPanel.tsx`。
+- 改 Prompt 确认或单张优化：`GenerationPage.tsx`、`PromptReviewPanel.tsx`、`api.ts`、`backend/planner.py` 和 `backend/orchestrator.py`；必须保持规划阶段零图片模型调用、确认阶段不重新规划。
 - 改上传限制：后端 `storage.py` 与前端 `UploadZone.tsx` 必须同步。
 - 改有图/无图自动分流：`backend/domain.py` 的 `GenerationRequest.infer_reference_mode`，并同步 `GenerationPage.tsx` 的状态提示和请求测试。
 - 改主图双图片输入：前端改 `PromptImageComposer.tsx` 与 `GenerationPage.tsx`；后端必须同步检查 `GenerationRequest.style_reference_assets` 和 `GenerationOrchestrator` 的商品分析隔离测试。
