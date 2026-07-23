@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   listPersonalVisualTemplates,
   PERSONAL_TEMPLATE_STORAGE_KEY,
+  updatePersonalVisualTemplate,
 } from "./personalTemplateRepository";
 
 /** 创建一条字段完整、可按需覆盖的本机套图模板记录。 */
@@ -32,6 +33,7 @@ describe("personalTemplateRepository", () => {
     );
 
     expect(listPersonalVisualTemplates()).toHaveLength(1);
+    expect(listPersonalVisualTemplates()[0]?.name).toBe("我的模板01");
     expect(listPersonalVisualTemplates()[0]?.customRoles[1]).not.toHaveProperty("layout_recipe_id");
   });
 
@@ -47,5 +49,33 @@ describe("personalTemplateRepository", () => {
     );
 
     expect(listPersonalVisualTemplates()).toEqual([]);
+  });
+
+  it("继续编辑会覆盖原模板并保留我的模板名称和 ID", () => {
+    localStorage.setItem(
+      PERSONAL_TEMPLATE_STORAGE_KEY,
+      JSON.stringify([storedTemplate({ name: "我的模板01" })]),
+    );
+
+    const existingTemplate = listPersonalVisualTemplates()[0];
+    expect(existingTemplate).toBeDefined();
+    const updatedTemplate = updatePersonalVisualTemplate(existingTemplate!.id, {
+      imageType: "set",
+      slotIndex: 3,
+      slotTitle: "Logo 工艺展示",
+      instruction: "把刺绣工艺展示得更清楚",
+      previewImageUrl: "https://images.example.com/updated-logo.png",
+      customRoles: existingTemplate!.customRoles,
+    });
+
+    expect(updatedTemplate).toMatchObject({
+      id: "personal-template-1",
+      name: "我的模板01",
+      slotIndex: 3,
+      instruction: "把刺绣工艺展示得更清楚",
+      previewImageUrl: "https://images.example.com/updated-logo.png",
+    });
+    expect(listPersonalVisualTemplates()).toHaveLength(1);
+    expect(listPersonalVisualTemplates()[0]?.name).toBe("我的模板01");
   });
 });

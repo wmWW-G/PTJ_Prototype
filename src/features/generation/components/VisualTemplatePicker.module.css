@@ -29,11 +29,10 @@
 
 .drawerLayer { position: fixed; z-index: 80; inset: 0; }
 .backdrop { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; background: rgb(37 31 27 / 32%); backdrop-filter: blur(2px); }
-.drawer { position: absolute; top: 0; right: 0; width: min(520px, 92vw); height: 100%; display: grid; grid-template-rows: auto auto 1fr auto; overflow: hidden; background: white; box-shadow: -18px 0 48px rgb(39 31 24 / 18%); animation: drawerIn .22s cubic-bezier(.22, 1, .36, 1); }
+.drawer { position: absolute; top: 0; right: 0; width: min(1180px, 86vw); height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; background: white; box-shadow: -18px 0 48px rgb(39 31 24 / 18%); animation: drawerIn .22s cubic-bezier(.22, 1, .36, 1); }
 .detailDrawer { grid-template-rows: auto minmax(0, 1fr) auto; }
-.customEditDrawer { width: min(1180px, 86vw); }
 @keyframes drawerIn { from { transform: translateX(26px); opacity: .7; } }
-.drawer > header { min-height: 86px; display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 22px 22px 16px; border-bottom: 1px solid var(--line); }
+.drawer > header { min-height: 64px; display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 14px 22px 12px; border-bottom: 1px solid var(--line); }
 .drawer > header > div { display: grid; gap: 6px; }
 .drawer > header strong { color: var(--ink-950); font-size: 18px; letter-spacing: -.02em; }
 .drawer > header span { color: var(--ink-500); font-size: 10px; line-height: 1.5; }
@@ -49,12 +48,8 @@
 .customEditorHeader span { display: flex; align-items: center; gap: 5px; color: var(--ink-500); }
 .customEditorHeader span svg { color: var(--brand-600); }
 
-.categoryTabs { display: flex; gap: 7px; overflow-x: auto; padding: 14px 22px 10px; }
-.categoryTabs button { height: 30px; flex: none; padding: 0 11px; border: 1px solid var(--line); border-radius: 16px; color: var(--ink-600); background: white; font-size: 10px; }
-.categoryTabs .activeCategory { border-color: var(--brand-500); color: var(--brand-700); background: var(--brand-50); font-weight: 700; }
-
-.templateGrid { display: grid; grid-template-columns: 1fr 1fr; align-content: start; gap: 12px; overflow-y: auto; padding: 10px 22px 20px; }
-.templateCard { min-width: 0; display: grid; align-content: start; padding: 9px; border: 1px solid #e4ded7; border-radius: 10px; background: white; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.templateGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: start; gap: 12px; overflow-y: auto; padding: 18px 22px 20px; }
+.templateCard { min-width: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; align-content: stretch; padding: 9px; border: 1px solid #e4ded7; border-radius: 10px; background: white; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
 .templateCard:hover { transform: translateY(-1px); border-color: #e0ad70; }
 .templateCard.activeCard { border: 2px solid var(--brand-600); padding: 8px; box-shadow: 0 7px 20px rgb(114 76 34 / 10%); }
 .cardSelect { min-width: 0; padding: 0; border: 0; color: inherit; background: transparent; text-align: left; }
@@ -74,6 +69,12 @@
 .templateGrid ul { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin: 9px 0 0; padding: 8px 0 0 15px; border-top: 1px dashed #eaded2; color: var(--ink-600); font-size: 8px; line-height: 1.4; }
 .detailButton { width: 100%; height: 32px; display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 9px; padding: 0; border: 1px solid #eadfd3; border-radius: 7px; color: var(--brand-700); background: #fffaf3; font-size: 10px; font-weight: 700; }
 .detailButton:hover { border-color: var(--brand-500); background: var(--brand-50); }
+.detailButton:disabled { opacity: .42; cursor: not-allowed; }
+.detailButton:disabled:hover { border-color: #eadfd3; background: #fffaf3; }
+.cardActions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 9px; }
+.cardActions .detailButton { margin-top: 0; }
+.cardActions .editTemplateButton { color: #397a2d; border-color: #d5e6cf; background: #f5fbf2; }
+.cardActions .editTemplateButton:hover { color: #2f6925; border-color: #8fbd82; background: #edf8e9; }
 .emptyCategory { grid-column: 1 / -1; min-height: 220px; display: grid; place-items: center; align-content: center; gap: 8px; color: var(--ink-500); font-size: 11px; }
 
 .customBuilder { overflow-y: auto; padding: 18px 22px 24px; background: #fbfaf8; }
@@ -121,36 +122,38 @@
 .roleChoiceGrid .activeRoleChoice { border-color: var(--brand-500); background: var(--brand-50); box-shadow: inset 0 0 0 1px var(--brand-500); }
 .roleChoiceGrid .activeRoleChoice > b { border-color: var(--brand-600); color: white; background: var(--brand-600); }
 
-.customOverview { min-height: 0; overflow-y: auto; padding: 30px 42px 34px; background: #fcfbf9; }
-.customOverviewLead { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; max-width: 940px; margin: 0 auto 20px; }
+.customOverview { min-height: 0; overflow-y: auto; padding: 16px 42px 18px; background: #fcfbf9; }
+.customOverviewLead { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; max-width: 1000px; margin: 0 auto 10px; }
 .customOverviewLead > div { display: grid; gap: 5px; }
 .customOverviewLead strong { color: var(--ink-950); font-size: 17px; letter-spacing: -.02em; }
 .customOverviewLead span { color: var(--ink-500); font-size: 11px; }
 .customOverviewLead > b { color: var(--brand-700); font-size: 11px; }
-.customOverviewGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; max-width: 940px; margin: 0 auto; }
-.customOverviewGrid > button { min-width: 0; display: grid; gap: 8px; padding: 10px; border: 1px solid #e7e1da; border-radius: 12px; color: inherit; background: white; text-align: left; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.customOverviewGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; max-width: 1000px; margin: 0 auto; }
+.customOverviewGrid.eightSlotGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.customOverviewGrid > button { min-width: 0; display: grid; gap: 5px; padding: 7px; border: 1px solid #e7e1da; border-radius: 10px; color: inherit; background: white; text-align: left; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
 .customOverviewGrid > button:hover { transform: translateY(-2px); border-color: var(--brand-500); box-shadow: 0 10px 24px rgb(77 53 30 / 8%); }
-.customOverviewImage { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 9px; background: #f2efeb; }
+.customOverviewImage { position: relative; aspect-ratio: 1.22; overflow: hidden; border-radius: 7px; background: #f2efeb; }
 .customOverviewImage img { width: 100%; height: 100%; object-fit: cover; }
 .customOverviewImage > b { position: absolute; top: 9px; left: 9px; padding: 4px 6px; border-radius: 5px; color: white; background: rgb(38 31 26 / 70%); font-size: 9px; font-variant-numeric: tabular-nums; }
 .customOverviewImage > i { position: absolute; top: 9px; right: 9px; width: 28px; height: 28px; display: grid; place-items: center; border: 2px solid white; border-radius: 50%; color: white; background: var(--brand-600); }
 .customOverviewGrid > button > strong { color: var(--ink-900); font-size: 12px; }
 .customOverviewGrid > button > small { color: var(--ink-500); font-size: 9px; }
-.drawer > footer.customOverviewFooter { display: flex; justify-content: flex-end; padding: 14px 42px 18px; }
+.drawer > footer.customOverviewFooter { display: flex; justify-content: flex-end; padding: 10px 42px 12px; }
 .drawer > footer.customOverviewFooter button { width: 240px; }
 
-.aiSlotEditor { min-height: 0; overflow-y: auto; padding: 20px 42px 18px; }
-.customSlotStrip { display: grid; grid-template-columns: repeat(auto-fit, minmax(82px, 1fr)); gap: 12px; max-width: 1000px; margin: 0 auto 18px; }
+.aiSlotEditor { min-height: 0; overflow-y: auto; padding: 10px 42px 8px; }
+.customSlotStrip { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; max-width: 1000px; margin: 0 auto 10px; }
 .customSlotStrip button { min-width: 0; display: grid; gap: 6px; padding: 6px; border: 1px solid #e5dfd8; border-radius: 8px; color: var(--ink-500); background: white; font-size: 10px; font-variant-numeric: tabular-nums; }
 .customSlotStrip button:hover { border-color: var(--brand-400); }
-.customSlotStrip button img { width: 100%; aspect-ratio: 1; border-radius: 5px; object-fit: cover; background: #f0ece7; }
+.customSlotStrip button img { width: 100%; height: 54px; border-radius: 5px; object-fit: cover; background: #f0ece7; }
 .customSlotStrip .activeCustomSlot { border: 2px solid var(--brand-600); padding: 5px; color: var(--brand-700); font-weight: 750; }
 
-.aiComparison { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; max-width: 1000px; margin: 0 auto; }
+.aiComparison { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; max-width: 1000px; margin: 0 auto; }
+.aiComparison.singleAiComparison { grid-template-columns: minmax(0, 1fr); max-width: 500px; }
 .aiComparison figure { min-width: 0; display: grid; gap: 8px; margin: 0; }
 .aiComparison figcaption { color: var(--ink-800); font-size: 12px; font-weight: 750; }
 .aiComparison figure > img,
-.aiCandidate > div { width: 100%; max-height: 380px; aspect-ratio: 1; overflow: hidden; border: 1px solid #e1dcd6; border-radius: 10px; background: #f5f2ee; }
+.aiCandidate > div { width: 100%; height: min(30vh, 280px); overflow: hidden; border: 1px solid #e1dcd6; border-radius: 10px; background: #f5f2ee; }
 .aiComparison figure > img { object-fit: contain; }
 .aiCandidate > div { position: relative; border: 2px solid var(--brand-600); }
 .aiCandidate > div > img { width: 100%; height: 100%; object-fit: contain; }
@@ -160,7 +163,7 @@
 .spinningIcon { animation: spin .85s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.aiPromptArea { max-width: 1000px; margin: 16px auto 0; }
+.aiPromptArea { max-width: 1000px; margin: 10px auto 0; }
 .aiPromptBar { min-height: 52px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 7px 8px 7px 14px; border: 1px solid #ded8d1; border-radius: 10px; background: white; }
 .aiPromptBar > svg { color: var(--brand-600); }
 .aiPromptBar input { min-width: 0; height: 36px; padding: 0; border: 0; color: var(--ink-900); background: transparent; font-size: 12px; }
@@ -182,7 +185,7 @@
 .aiPromptMeta small { margin-left: auto; font-size: 9px; }
 .generationError { margin: 7px 0 0; color: #b43e2f; font-size: 10px; }
 
-.templateExtractionBar { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 16px; max-width: 1000px; margin: 16px auto 0; padding: 0 10px; border-top: 1px solid #eee9e3; color: var(--ink-500); }
+.templateExtractionBar { min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 16px; max-width: 1000px; margin: 8px auto 0; padding: 0 10px; border-top: 1px solid #eee9e3; color: var(--ink-500); }
 .templateExtractionBar > span { display: flex; align-items: center; gap: 7px; font-size: 10px; }
 .templateExtractionBar > span svg { color: var(--brand-600); }
 .templateExtractionBar > button { display: flex; align-items: center; gap: 6px; padding: 7px 9px; border: 0; color: var(--ink-700); background: transparent; font-size: 10px; }
@@ -190,39 +193,11 @@
 .acceptedExtraction { color: #377d27; }
 .acceptedExtraction > span svg { color: #4b9f35; }
 
-.drawer > footer.slotEditorActions { display: flex; justify-content: flex-end; padding: 14px 42px 18px; }
+.drawer > footer.slotEditorActions { display: flex; justify-content: flex-end; padding: 9px 42px 11px; }
 .drawer > footer.slotEditorActions button { width: min(360px, 100%); height: 48px; border: 1px solid #ddd7d0; color: var(--ink-800); background: white; }
 .drawer > footer.slotEditorActions button:hover:not(:disabled) { border-color: var(--brand-500); color: var(--brand-700); background: var(--brand-50); }
 .drawer > footer.slotEditorActions .primarySlotAction { border-color: var(--brand-600); color: white; background: var(--brand-600); }
 .drawer > footer.slotEditorActions .primarySlotAction:hover:not(:disabled) { color: white; background: var(--brand-700); }
-
-.detailView { overflow-y: auto; padding: 18px 22px 24px; }
-.detailIntro { display: grid; gap: 8px; padding: 16px 2px 18px; border-bottom: 1px solid var(--line); }
-.detailIntro > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.detailIntro > div span { width: max-content; padding: 4px 8px; border-radius: 999px; color: var(--brand-700); background: var(--brand-50); font-size: 9px; font-weight: 750; }
-.detailIntro > div b { color: var(--brand-700); font-size: 10px; }
-.detailIntro p { margin: 0; color: var(--ink-800); font-size: 12px; font-weight: 650; line-height: 1.55; }
-.detailIntro small { color: var(--ink-500); font-size: 10px; line-height: 1.55; }
-.detailSection { padding: 18px 2px 0; }
-.detailSection h3 { margin: 0 0 11px; color: var(--ink-900); font-size: 12px; }
-.detailSection > p { margin: -3px 0 11px; color: var(--ink-500); font-size: 9px; line-height: 1.5; }
-.rolePreviewGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; padding: 0; list-style: none; }
-.rolePreviewGrid li { min-width: 0; }
-.rolePreviewGrid li > button { width: 100%; height: 100%; display: grid; align-content: start; gap: 7px; padding: 8px; border: 1px solid #eee5dc; border-radius: 10px; color: inherit; background: #fdfbf8; text-align: left; transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease; }
-.rolePreviewGrid li > button:hover { transform: translateY(-1px); border-color: #e0ad70; box-shadow: 0 7px 18px rgb(114 76 34 / 8%); }
-.rolePreviewImage { position: relative; height: 116px; overflow: hidden; border-radius: 7px; background: #eee8e1; }
-.rolePreviewImage img { width: 100%; height: 100%; object-fit: cover; transition: transform .2s ease; }
-.rolePreviewGrid li > button:hover img { transform: scale(1.025); }
-.rolePreviewImage > b { position: absolute; top: 7px; left: 7px; padding: 4px 6px; border-radius: 5px; color: white; background: rgb(40 32 26 / 72%); font-size: 8px; font-variant-numeric: tabular-nums; }
-.rolePreviewImage > span { position: absolute; right: 7px; bottom: 7px; display: flex; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 5px; color: white; background: rgb(40 32 26 / 72%); font-size: 8px; }
-.rolePreviewGrid strong { color: var(--ink-800); font-size: 10px; line-height: 1.35; }
-.rolePreviewGrid p { margin: 0; color: var(--ink-500); font-size: 8px; line-height: 1.5; }
-.detailFocus { display: flex; flex-wrap: wrap; gap: 7px; }
-.detailFocus span { padding: 6px 9px; border: 1px solid #eadfd3; border-radius: 7px; color: var(--ink-700); background: white; font-size: 9px; }
-.detailFields { display: grid; gap: 7px; }
-.detailFields > div { display: grid; grid-template-columns: 116px 1fr; gap: 12px; padding: 9px 10px; border-radius: 7px; background: #f7f5f2; }
-.detailFields strong { color: var(--ink-700); font-size: 9px; }
-.detailFields span { color: var(--ink-500); font-size: 8px; line-height: 1.45; }
 
 .drawer > footer { padding: 14px 22px 18px; border-top: 1px solid var(--line); background: white; }
 .drawer > footer button { width: 100%; height: 46px; border: 0; border-radius: 9px; color: white; background: var(--brand-600); font-size: 13px; font-weight: 750; }
@@ -245,7 +220,7 @@
 .lightboxPanel > footer button:not(:disabled):hover { border-color: var(--brand-500); color: var(--brand-700); background: var(--brand-50); }
 
 @media (max-width: 700px) {
-  .customEditDrawer { width: 100vw; }
+  .drawer { width: 100vw; }
   .customOverview { padding: 22px 16px 26px; }
   .customOverviewGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .aiSlotEditor { padding: 14px 16px; }
@@ -266,8 +241,5 @@
   .templateGrid { grid-template-columns: 1fr; }
   .selectedRoleSequence,
   .roleChoiceGrid { grid-template-columns: 1fr; }
-  .rolePreviewGrid { grid-template-columns: 1fr; }
-  .rolePreviewImage { height: 180px; }
-  .detailFields > div { grid-template-columns: 1fr; gap: 4px; }
   .imageLightbox { padding: 12px; }
 }

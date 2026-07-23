@@ -7,7 +7,6 @@ import {
   ChevronRight,
   CircleCheck,
   Eye,
-  ImageIcon,
   ImagePlus,
   Layers3,
   LoaderCircle,
@@ -37,6 +36,7 @@ import {
   LAYOUT_RECIPE_IDS,
   savePersonalVisualTemplate,
   type PersonalVisualTemplate,
+  updatePersonalVisualTemplate,
 } from "../personalTemplateRepository";
 import styles from "./VisualTemplatePicker.module.css";
 
@@ -662,14 +662,14 @@ export function VisualTemplatePicker({
       ?? DEFAULT_VISUAL_TEMPLATES.standard_product;
   const [isOpen, setIsOpen] = useState(false);
   const [draftValue, setDraftValue] = useState(selected.id);
-  const [category, setCategory] = useState("推荐");
   const [detailTemplateId, setDetailTemplateId] = useState<string | null>(null);
+  const [detailPersonalTemplateId, setDetailPersonalTemplateId] = useState<string | null>(null);
+  const [draftPersonalTemplateId, setDraftPersonalTemplateId] = useState<string | null>(null);
   const [previewRoleIndex, setPreviewRoleIndex] = useState<number | null>(null);
   const [isCustomBuilderOpen, setIsCustomBuilderOpen] = useState(false);
   const [draftCustomRoles, setDraftCustomRoles] = useState<CustomVisualRoleSelection[]>([]);
   const [customEditorSlotIndex, setCustomEditorSlotIndex] = useState<number | null>(null);
   const [editInstruction, setEditInstruction] = useState("增加四种 Logo 工艺展示，整体更专业，文案由 AI 生成");
-  const [candidateRevisions, setCandidateRevisions] = useState<Record<number, number>>({});
   const [generatedCandidateImages, setGeneratedCandidateImages] = useState<Record<number, string>>({});
   const [customReferenceFile, setCustomReferenceFile] = useState<File | null>(null);
   const [customReferencePreviewUrl, setCustomReferencePreviewUrl] = useState<string | null>(null);
@@ -677,25 +677,63 @@ export function VisualTemplatePicker({
   const [customGenerationError, setCustomGenerationError] = useState<string | null>(null);
   const [acceptedSlotIndexes, setAcceptedSlotIndexes] = useState<number[]>([]);
   const [savedSlotIndexes, setSavedSlotIndexes] = useState<number[]>([]);
+  const [editingPersonalTemplateId, setEditingPersonalTemplateId] = useState<string | null>(null);
   const [personalTemplates, setPersonalTemplates] = useState<PersonalVisualTemplate[]>(
     () => listPersonalVisualTemplates(),
   );
+  const [selectedCustomTemplateName, setSelectedCustomTemplateName] = useState<string | null>(null);
   const editInstructionRef = useRef<HTMLInputElement>(null);
   const customReferenceInputRef = useRef<HTMLInputElement>(null);
-  const categories = ["推荐", "自定义", ...new Set(templateList.map((item) => item.category))];
-  const visibleTemplates = category === "推荐"
-    ? templateList
-    : category === "自定义"
-      ? []
-    : templateList.filter((item) => item.category === category);
-  const showCustomCard = category === "推荐" || category === "自定义";
   const visiblePersonalTemplates = personalTemplates.filter(
     (template) => template.imageType === templatedImageType,
   );
   const filledCount = selected.fields.filter((field) => supplementalInfo[field.key]?.trim()).length;
-  const detailTemplate = detailTemplateId
-    ? templateList.find((template) => template.id === detailTemplateId) ?? null
+  const detailPersonalTemplate = detailPersonalTemplateId
+    ? visiblePersonalTemplates.find((template) => template.id === detailPersonalTemplateId) ?? null
     : null;
+  const detailTemplate = useMemo<VisualTemplateCapability | null>(() => {
+    if (detailTemplateId) {
+      return templateList.find((template) => template.id === detailTemplateId) ?? null;
+    }
+    if (!detailPersonalTemplate) return null;
+
+    const roleDetails = detailPersonalTemplate.customRoles.map((role, index) => {
+      const sourceTemplate = templateList.find((template) => template.id === role.template_id);
+      const fallbackSlot = CUSTOM_PREVIEW_SLOTS[index % CUSTOM_PREVIEW_SLOTS.length];
+      return {
+        title: sourceTemplate?.role_highlights[role.role_index] ?? fallbackSlot.title,
+        composition: sourceTemplate?.role_compositions?.[role.role_index]
+          ?? "沿用保存时的构图与信息结构，并保持整套商品身份一致。",
+        image: index === detailPersonalTemplate.slotIndex
+          ? detailPersonalTemplate.previewImageUrl
+          : sourceTemplate?.preview_images[role.role_index % (sourceTemplate.preview_images.length || 1)]
+            ?? fallbackSlot.originalImage,
+      };
+    });
+
+    return {
+      id: customTemplateId,
+      image_types: [templatedImageType],
+      name: detailPersonalTemplate.name,
+      category: "我的模板",
+      description: detailPersonalTemplate.instruction,
+      art_direction: "按保存时的整套职责顺序和已采用画面继续生成。",
+      information_focus: roleDetails.map((role) => role.title),
+      role_highlights: roleDetails.map((role) => role.title),
+      role_compositions: roleDetails.map((role) => role.composition),
+      preview_images: roleDetails.map((role) => role.image),
+      fields: customTemplate.fields,
+      density_profile: customTemplate.density_profile,
+    };
+  }, [
+    customTemplate.density_profile,
+    customTemplate.fields,
+    customTemplateId,
+    detailPersonalTemplate,
+    detailTemplateId,
+    templateList,
+    templatedImageType,
+  ]);
   const customCardImages = customTemplate.preview_images.length > 0
     ? customTemplate.preview_images.slice(0, 4)
     : rolePool.slice(0, 4).map((role) => role.previewImage).filter(Boolean);
@@ -705,11 +743,6 @@ export function VisualTemplatePicker({
   const generatedActiveCandidate = customEditorSlotIndex === null
     ? null
     : generatedCandidateImages[customEditorSlotIndex] ?? null;
-  const activeCandidateImage = generatedActiveCandidate ?? (activeCustomSlot
-    ? activeCustomSlot.candidateImages[
-      (candidateRevisions[customEditorSlotIndex ?? 0] ?? 0) % activeCustomSlot.candidateImages.length
-    ]
-    : null);
   const hasGeneratedActiveCandidate = Boolean(generatedActiveCandidate);
   const activeSlotAccepted = customEditorSlotIndex !== null
     && acceptedSlotIndexes.includes(customEditorSlotIndex);
@@ -725,28 +758,47 @@ export function VisualTemplatePicker({
 
   /** 打开抽屉时以当前模板为草稿，取消操作不会污染正式选择。 */
   function openDrawer() {
+    const storedPersonalTemplates = listPersonalVisualTemplates();
     setDraftValue(selected.id);
     // 每次打开都重读本机存储，确保刷新页面或其他标签页新保存的模板可见。
-    setPersonalTemplates(listPersonalVisualTemplates());
-    setCategory("推荐");
+    setPersonalTemplates(storedPersonalTemplates);
+    setDraftPersonalTemplateId(
+      selectedCustomTemplateName
+        ? storedPersonalTemplates.find((template) => template.name === selectedCustomTemplateName)?.id ?? null
+        : null,
+    );
     setDetailTemplateId(null);
+    setDetailPersonalTemplateId(null);
     setPreviewRoleIndex(null);
     setIsCustomBuilderOpen(false);
     setCustomEditorSlotIndex(null);
+    setEditingPersonalTemplateId(null);
     setIsOpen(true);
   }
 
   /** 关闭抽屉并清除详情层，确保下次打开仍从模板列表开始。 */
   function closeDrawer() {
     setDetailTemplateId(null);
+    setDetailPersonalTemplateId(null);
     setPreviewRoleIndex(null);
     setIsCustomBuilderOpen(false);
     setCustomEditorSlotIndex(null);
+    setEditingPersonalTemplateId(null);
     setIsOpen(false);
   }
 
   /** 确认草稿模板，同时保留名称相同的已填信息，减少重复输入。 */
   function confirmTemplate() {
+    const personalTemplate = visiblePersonalTemplates.find(
+      (template) => template.id === draftPersonalTemplateId,
+    );
+    if (personalTemplate) {
+      onCustomRolesChange(personalTemplate.customRoles.map((role) => ({ ...role })));
+      setSelectedCustomTemplateName(personalTemplate.name);
+      onChange(customTemplateId);
+      closeDrawer();
+      return;
+    }
     onChange(draftValue);
     closeDrawer();
   }
@@ -754,6 +806,13 @@ export function VisualTemplatePicker({
   /** 从详情页直接确认当前模板，省去返回列表后再次确认的步骤。 */
   function confirmDetailTemplate() {
     if (!detailTemplate) return;
+    if (detailPersonalTemplate) {
+      onCustomRolesChange(detailPersonalTemplate.customRoles.map((role) => ({ ...role })));
+      setSelectedCustomTemplateName(detailPersonalTemplate.name);
+      onChange(customTemplateId);
+      closeDrawer();
+      return;
+    }
     onChange(detailTemplate.id);
     closeDrawer();
   }
@@ -768,10 +827,10 @@ export function VisualTemplatePicker({
       }));
     setDraftCustomRoles(startingRoles.slice(0, requiredRoleCount));
     setDetailTemplateId(null);
+    setDetailPersonalTemplateId(null);
     setPreviewRoleIndex(null);
     setIsCustomBuilderOpen(true);
     setCustomEditorSlotIndex(null);
-    setCandidateRevisions({});
     setGeneratedCandidateImages({});
     setCustomReferenceFile(null);
     setCustomReferencePreviewUrl(null);
@@ -779,23 +838,27 @@ export function VisualTemplatePicker({
     setIsCustomGenerating(false);
     setAcceptedSlotIndexes([]);
     setSavedSlotIndexes([]);
+    setEditingPersonalTemplateId(null);
   }
 
   /**
-   * 从“自定义”分类重新打开一条已保存的个人模板。
+   * 从“我的模板”继续编辑，并恢复保存时的整套职责、图片和自然语言指令。
    *
-   * @param template 从 LocalStorage 读取且已经过结构校验的个人模板。
-   * @returns 无返回值；界面会恢复整套职责、单图预览和修改要求。
-   * @throws 不抛出异常；传入模板在读取阶段已完成结构校验。
+   * @param template 用户明确点击“继续编辑”的个人模板。
+   * @returns 无返回值；编辑器会打开在整套总览，用户可选择任意一张继续修改。
+   * @throws 不主动抛出异常；模板已经通过存储层校验。
    */
-  function openPersonalTemplate(template: PersonalVisualTemplate): void {
+  function continueEditingPersonalTemplate(template: PersonalVisualTemplate) {
+    setDraftValue(customTemplateId);
+    setDraftPersonalTemplateId(template.id);
     setDraftCustomRoles(template.customRoles.map((role) => ({ ...role })));
+    setSelectedCustomTemplateName(template.name);
     setDetailTemplateId(null);
+    setDetailPersonalTemplateId(null);
     setPreviewRoleIndex(null);
     setIsCustomBuilderOpen(true);
-    setCustomEditorSlotIndex(template.slotIndex);
+    setCustomEditorSlotIndex(null);
     setEditInstruction(template.instruction);
-    setCandidateRevisions({});
     setGeneratedCandidateImages({ [template.slotIndex]: template.previewImageUrl });
     setCustomReferenceFile(null);
     setCustomReferencePreviewUrl(null);
@@ -803,14 +866,47 @@ export function VisualTemplatePicker({
     setIsCustomGenerating(false);
     setAcceptedSlotIndexes([template.slotIndex]);
     setSavedSlotIndexes([template.slotIndex]);
+    setEditingPersonalTemplateId(template.id);
   }
 
-  /** 只有选满当前类型要求的固定张数后，才提交自定义模板与职责顺序。 */
+  /**
+   * 保存当前整套自定义模板，并以“我的模板01”起自动顺序命名。
+   *
+   * @returns 无返回值；保存成功后提交固定职责顺序并关闭抽屉。
+   * @throws 不向事件边界抛出异常；LocalStorage 失败会留在当前页面并显示错误。
+   */
   function confirmCustomTemplate() {
     if (draftCustomRoles.length !== requiredRoleCount) return;
-    onCustomRolesChange(draftCustomRoles.map((role) => ({ ...role })));
-    onChange(customTemplateId);
-    closeDrawer();
+    const savedSlotIndex = acceptedSlotIndexes.at(-1) ?? 0;
+    const slot = CUSTOM_PREVIEW_SLOTS[savedSlotIndex % CUSTOM_PREVIEW_SLOTS.length];
+    const previewImageUrl = generatedCandidateImages[savedSlotIndex]
+      ?? slot.originalImage;
+    try {
+      const templateInput = {
+        imageType: templatedImageType,
+        slotIndex: savedSlotIndex,
+        slotTitle: slot.title,
+        instruction: acceptedSlotIndexes.length > 0
+          ? editInstruction.trim()
+          : "基于当前整套结构保存的自定义模板",
+        previewImageUrl,
+        customRoles: draftCustomRoles,
+      };
+      const savedTemplate = editingPersonalTemplateId
+        ? updatePersonalVisualTemplate(editingPersonalTemplateId, templateInput)
+        : savePersonalVisualTemplate(templateInput);
+      setPersonalTemplates((current) => [
+        savedTemplate,
+        ...current.filter((template) => template.id !== savedTemplate.id),
+      ]);
+      setSelectedCustomTemplateName(savedTemplate.name);
+      onCustomRolesChange(draftCustomRoles.map((role) => ({ ...role })));
+      onChange(customTemplateId);
+      closeDrawer();
+    } catch (error) {
+      console.error("[批图匠] 整套模板保存失败", error);
+      setCustomGenerationError("模板保存失败，请检查浏览器存储权限后重试");
+    }
   }
 
   /**
@@ -970,14 +1066,17 @@ export function VisualTemplatePicker({
     }
 
     try {
-      const savedTemplate = savePersonalVisualTemplate({
+      const templateInput = {
         imageType: templatedImageType,
         slotIndex: customEditorSlotIndex,
         slotTitle,
         instruction: editInstruction.trim(),
         previewImageUrl,
         customRoles: draftCustomRoles,
-      });
+      };
+      const savedTemplate = editingPersonalTemplateId
+        ? updatePersonalVisualTemplate(editingPersonalTemplateId, templateInput)
+        : savePersonalVisualTemplate(templateInput);
       setPersonalTemplates((current) => [
         savedTemplate,
         ...current.filter((template) => template.id !== savedTemplate.id),
@@ -1020,7 +1119,9 @@ export function VisualTemplatePicker({
         </div>
         <div className={styles.selectedCopy}>
           <div>
-            <strong>{selected.name}</strong>
+          <strong>{value === customTemplateId && selectedCustomTemplateName
+            ? selectedCustomTemplateName
+            : selected.name}</strong>
             {selected.density_profile?.level === "high" && <em className={styles.densityBadge}>高信息量</em>}
             <b>{selected.role_highlights.length} 张 / 版</b>
           </div>
@@ -1055,7 +1156,7 @@ export function VisualTemplatePicker({
         <div className={styles.drawerLayer}>
           <button className={styles.backdrop} type="button" aria-label="关闭模板选择" onClick={closeDrawer} />
           <aside
-            className={`${styles.drawer} ${detailTemplate || isCustomBuilderOpen ? styles.detailDrawer : ""} ${isCustomBuilderOpen ? styles.customEditDrawer : ""}`}
+            className={`${styles.drawer} ${detailTemplate || isCustomBuilderOpen ? styles.detailDrawer : ""}`}
             role="dialog"
             aria-modal="true"
             aria-label="选择生图模板"
@@ -1109,6 +1210,7 @@ export function VisualTemplatePicker({
                     aria-label="返回模板列表"
                     onClick={() => {
                       setDetailTemplateId(null);
+                      setDetailPersonalTemplateId(null);
                       setPreviewRoleIndex(null);
                     }}
                   >
@@ -1141,13 +1243,12 @@ export function VisualTemplatePicker({
                       </div>
                       <b>{requiredRoleCount} 张 / 版</b>
                     </div>
-                    <div className={styles.customOverviewGrid}>
+                    <div className={`${styles.customOverviewGrid} ${requiredRoleCount > 6 ? styles.eightSlotGrid : ""}`}>
                       {Array.from({ length: requiredRoleCount }, (_, index) => {
                         const slot = CUSTOM_PREVIEW_SLOTS[index % CUSTOM_PREVIEW_SLOTS.length];
                         const accepted = acceptedSlotIndexes.includes(index);
                         const previewImage = accepted
-                          ? generatedCandidateImages[index]
-                            ?? slot.candidateImages[(candidateRevisions[index] ?? 0) % slot.candidateImages.length]
+                          ? generatedCandidateImages[index] ?? slot.originalImage
                           : slot.originalImage;
                         return (
                           <button
@@ -1169,7 +1270,7 @@ export function VisualTemplatePicker({
                     </div>
                   </div>
                   <footer className={styles.customOverviewFooter}>
-                    <button type="button" onClick={confirmCustomTemplate}>使用这套模板</button>
+                    <button type="button" onClick={confirmCustomTemplate}>保存模板</button>
                   </footer>
                 </>
               ) : (
@@ -1196,7 +1297,14 @@ export function VisualTemplatePicker({
                       })}
                     </nav>
 
-                    <section className={styles.aiComparison} aria-label="原图与 AI 新版本对比">
+                    <section
+                      className={`${styles.aiComparison} ${
+                        !isCustomGenerating && !hasGeneratedActiveCandidate
+                          ? styles.singleAiComparison
+                          : ""
+                      }`}
+                      aria-label="原图与 AI 新版本对比"
+                    >
                       <figure>
                         <figcaption>原图</figcaption>
                         <img
@@ -1204,23 +1312,27 @@ export function VisualTemplatePicker({
                           alt="修改前的原图"
                         />
                       </figure>
-                      <figure className={styles.aiCandidate}>
-                        <figcaption>{hasGeneratedActiveCandidate ? "AI 新版本" : "参考预览"}</figcaption>
-                        <div className={isCustomGenerating ? styles.generatingCandidate : ""}>
-                          <img
-                            src={resolveCustomImageSource(activeCandidateImage ?? "")}
-                            alt="AI 生成的新版本"
-                          />
-                          {isCustomGenerating ? (
-                            <span className={styles.generationOverlay}>
-                              <LoaderCircle className={styles.spinningIcon} size={22} />
-                              正在生成
-                            </span>
-                          ) : hasGeneratedActiveCandidate ? (
-                            <i><CircleCheck size={18} /></i>
-                          ) : null}
-                        </div>
-                      </figure>
+                      {(isCustomGenerating || hasGeneratedActiveCandidate) && (
+                        <figure className={styles.aiCandidate}>
+                          <figcaption>AI 新版本</figcaption>
+                          <div className={isCustomGenerating ? styles.generatingCandidate : ""}>
+                            {generatedActiveCandidate && (
+                              <img
+                                src={resolveCustomImageSource(generatedActiveCandidate)}
+                                alt="AI 生成的新版本"
+                              />
+                            )}
+                            {isCustomGenerating ? (
+                              <span className={styles.generationOverlay}>
+                                <LoaderCircle className={styles.spinningIcon} size={22} />
+                                正在生成
+                              </span>
+                            ) : (
+                              <i><CircleCheck size={18} /></i>
+                            )}
+                          </div>
+                        </figure>
+                      )}
                     </section>
 
                     <div className={styles.aiPromptArea}>
@@ -1308,80 +1420,47 @@ export function VisualTemplatePicker({
               )
             ) : detailTemplate ? (
               <>
-                <div className={styles.detailView}>
-                  <div className={styles.detailIntro}>
+                <div className={styles.customOverview}>
+                  <div className={styles.customOverviewLead}>
                     <div>
-                      <span>{detailTemplate.category}</span>
-                      {detailTemplate.density_profile?.level === "high" && <em className={styles.densityBadge}>高信息量</em>}
-                      <b>共 {detailTemplate.role_highlights.length} 张详情图</b>
+                      <strong>整套模板结构</strong>
+                      <span>{detailTemplate.description}</span>
                     </div>
-                    <p>{detailTemplate.description}</p>
-                    <small>{detailTemplate.art_direction}</small>
+                    <b>{detailTemplate.role_highlights.length} 张 / 版</b>
                   </div>
-
-                  <section className={styles.detailSection}>
-                    <h3>逐张查看画面与信息结构</h3>
-                    <p>每张图负责一个采购决策模块，点击图片可放大查看。</p>
-                    <ol className={styles.rolePreviewGrid}>
-                      {detailTemplate.role_highlights.map((role, index) => (
-                        <li key={role}>
-                          <button type="button" onClick={() => setPreviewRoleIndex(index)}>
-                            <div className={styles.rolePreviewImage}>
-                              <img
-                                src={assetPath(detailTemplate.preview_images[index % detailTemplate.preview_images.length])}
-                                alt={`${detailTemplate.name}第 ${index + 1} 张：${role}`}
-                              />
-                              <b>{String(index + 1).padStart(2, "0")}</b>
-                              <span><Eye size={13} />查看大图</span>
-                            </div>
-                            <strong>{role}</strong>
-                            <p>{detailTemplate.role_compositions?.[index] ?? "围绕这一主题生成独立详情画面，并保持整套商品与视觉风格一致。"}</p>
-                          </button>
-                        </li>
-                      ))}
-                    </ol>
-                  </section>
-
-                  <section className={styles.detailSection}>
-                    <h3>重点表达信息</h3>
-                    <div className={styles.detailFocus}>
-                      {detailTemplate.information_focus.map((focus) => <span key={focus}>{focus}</span>)}
-                    </div>
-                  </section>
-
-                  <section className={styles.detailSection}>
-                    <h3>可补充信息（均选填）</h3>
-                    <p>不填写也能生成；填写得越具体，整套内容会越贴近你的真实业务。</p>
-                    <div className={styles.detailFields}>
-                      {detailTemplate.fields.map((field) => (
-                        <div key={field.key}><strong>{field.label}</strong><span>{field.placeholder}</span></div>
-                      ))}
-                    </div>
-                  </section>
+                  <div className={`${styles.customOverviewGrid} ${detailTemplate.role_highlights.length > 6 ? styles.eightSlotGrid : ""}`}>
+                    {detailTemplate.role_highlights.map((role, index) => (
+                      <button
+                        key={role}
+                        type="button"
+                        aria-label={`查看${detailTemplate.name}第 ${index + 1} 张：${role}`}
+                        onClick={() => setPreviewRoleIndex(index)}
+                      >
+                        <span className={styles.customOverviewImage}>
+                          <img
+                            src={resolveCustomImageSource(
+                              detailTemplate.preview_images[index % detailTemplate.preview_images.length],
+                            )}
+                            alt=""
+                          />
+                          <b>{String(index + 1).padStart(2, "0")}</b>
+                        </span>
+                        <strong>{role}</strong>
+                        <small>点击查看大图</small>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                <footer>
-                  <button type="button" onClick={confirmDetailTemplate}>选择并使用此模板</button>
+                <footer className={styles.customOverviewFooter}>
+                  <button type="button" onClick={confirmDetailTemplate}>使用此模板</button>
                 </footer>
               </>
             ) : (
               <>
-                <div className={styles.categoryTabs} aria-label="模板分类">
-                  {categories.map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      className={category === item ? styles.activeCategory : ""}
-                      onClick={() => setCategory(item)}
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
-
                 <div className={styles.templateGrid}>
-                  {visibleTemplates.map((item) => {
-                    const active = draftValue === item.id;
+                  {templateList.map((item) => {
+                    const active = draftValue === item.id && draftPersonalTemplateId === null;
                     return (
                       <article key={item.id} className={`${styles.templateCard} ${active ? styles.activeCard : ""}`}>
                         <button
@@ -1389,7 +1468,10 @@ export function VisualTemplatePicker({
                           className={styles.cardSelect}
                           aria-label={`选择${item.name}`}
                           aria-pressed={active}
-                          onClick={() => setDraftValue(item.id)}
+                          onClick={() => {
+                            setDraftValue(item.id);
+                            setDraftPersonalTemplateId(null);
+                          }}
                         >
                           <div className={styles.cardPreview}>
                             {item.preview_images.slice(0, 4).map((image, index) => (
@@ -1399,11 +1481,10 @@ export function VisualTemplatePicker({
                           </div>
                           <strong>{item.name}</strong>
                           <span>{item.description}</span>
-                          {active && (
-                            <ul>
-                              {item.information_focus.map((focus) => <li key={focus}>{focus}</li>)}
-                            </ul>
-                          )}
+                          {/* 生图维度始终可见。选中只负责状态反馈，不能再改变卡片高度。 */}
+                          <ul>
+                            {item.information_focus.map((focus) => <li key={focus}>{focus}</li>)}
+                          </ul>
                           {item.density_profile?.level === "high" && <em className={styles.densityBadge}>高信息量</em>}
                           <b className={styles.cardCount}>{item.role_highlights.length} 张 / 版</b>
                         </button>
@@ -1415,6 +1496,7 @@ export function VisualTemplatePicker({
                             : `查看${item.name}详情`}
                           onClick={() => {
                             setDetailTemplateId(item.id);
+                            setDetailPersonalTemplateId(null);
                             setPreviewRoleIndex(null);
                           }}
                         >
@@ -1423,44 +1505,82 @@ export function VisualTemplatePicker({
                       </article>
                     );
                   })}
-                  {category === "自定义" && visiblePersonalTemplates.map((template) => (
-                    <article
-                      key={template.id}
-                      className={`${styles.templateCard} ${styles.personalTemplateCard}`}
-                      aria-label={`我的模板：${template.slotTitle}`}
-                    >
-                      <button
-                        type="button"
-                        className={styles.cardSelect}
-                        aria-label={`打开我的模板：${template.slotTitle}`}
-                        onClick={() => openPersonalTemplate(template)}
+                  {visiblePersonalTemplates.map((template) => {
+                    const active = draftPersonalTemplateId === template.id;
+                    return (
+                      <article
+                        key={template.id}
+                        className={`${styles.templateCard} ${styles.personalTemplateCard} ${active ? styles.activeCard : ""}`}
+                        aria-label={`我的模板：${template.name}`}
                       >
-                        <div className={`${styles.cardPreview} ${styles.personalTemplatePreview}`}>
-                          <img
-                            src={resolveCustomImageSource(template.previewImageUrl)}
-                            alt={`${template.slotTitle}模板预览`}
-                          />
-                          <i><Bookmark size={14} /></i>
+                        <button
+                          type="button"
+                          className={styles.cardSelect}
+                          aria-label={`选择${template.name}`}
+                          aria-pressed={active}
+                          onClick={() => {
+                            setDraftValue(customTemplateId);
+                            setDraftPersonalTemplateId(template.id);
+                          }}
+                        >
+                          <div className={`${styles.cardPreview} ${styles.personalTemplatePreview}`}>
+                            <img
+                              src={resolveCustomImageSource(template.previewImageUrl)}
+                              alt={`${template.name}模板预览`}
+                            />
+                            {active ? <i><Check size={14} /></i> : <i><Bookmark size={14} /></i>}
+                          </div>
+                          <strong>{template.name}</strong>
+                          <span>{template.instruction}</span>
+                          <b className={styles.cardCount}>{requiredRoleCount} 张 / 版</b>
+                        </button>
+                        <div className={styles.cardActions}>
+                          <button
+                            type="button"
+                            className={styles.detailButton}
+                            aria-label={`查看${template.name}详情`}
+                            onClick={() => {
+                              setDetailTemplateId(null);
+                              setDetailPersonalTemplateId(template.id);
+                              setPreviewRoleIndex(null);
+                            }}
+                          >
+                            <Eye size={14} />查看详情
+                          </button>
+                          <button
+                            type="button"
+                            className={`${styles.detailButton} ${styles.editTemplateButton}`}
+                            aria-label={`继续编辑${template.name}`}
+                            onClick={() => continueEditingPersonalTemplate(template)}
+                          >
+                            <Layers3 size={14} />继续编辑
+                          </button>
                         </div>
-                        <strong>{template.slotTitle}</strong>
-                        <span>{template.instruction}</span>
-                        <b className={styles.cardCount}>我的模板 · 第 {template.slotIndex + 1} 张</b>
-                      </button>
-                    </article>
-                  ))}
-                  {showCustomCard && (
-                    <article className={`${styles.templateCard} ${styles.customTemplateCard}`}>
+                      </article>
+                    );
+                  })}
+                  <article className={`${styles.templateCard} ${styles.customTemplateCard} ${
+                    draftValue === customTemplateId && draftPersonalTemplateId === null
+                      ? styles.activeCard
+                      : ""
+                  }`}>
                       <button
                         type="button"
                         className={styles.cardSelect}
-                        aria-label={`配置自定义${imageType === "set" ? "套图" : "详情图"}`}
-                        onClick={openCustomBuilder}
+                        aria-label={`选择自定义${imageType === "set" ? "套图" : "详情图"}`}
+                        aria-pressed={draftValue === customTemplateId && draftPersonalTemplateId === null}
+                        onClick={() => {
+                          setDraftValue(customTemplateId);
+                          setDraftPersonalTemplateId(null);
+                        }}
                       >
                         <div className={styles.cardPreview}>
                           {customCardImages.map((image, index) => (
                             <img key={`${image}-${index}`} src={assetPath(image)} alt="" />
                           ))}
-                          <i className={styles.customCardIcon}><Layers3 size={14} /></i>
+                          {draftValue === customTemplateId && draftPersonalTemplateId === null
+                            ? <i><Check size={14} /></i>
+                            : <i className={styles.customCardIcon}><Layers3 size={14} /></i>}
                         </div>
                         <strong>自定义{imageType === "set" ? "套图" : "详情图"}</strong>
                         <span>从所有现有{imageType === "set" ? "套图" : "详情图"}职责中自由选择并调整顺序。</span>
@@ -1469,19 +1589,30 @@ export function VisualTemplatePicker({
                       <button
                         type="button"
                         className={styles.detailButton}
+                        disabled={draftValue !== customTemplateId || draftPersonalTemplateId !== null}
                         onClick={openCustomBuilder}
                       >
-                        <Layers3 size={14} />{customRoles.length === requiredRoleCount ? "继续编辑" : "开始组合"}
+                        <Layers3 size={14} />继续编辑
                       </button>
-                    </article>
-                  )}
-                  {visibleTemplates.length === 0 && !showCustomCard && (
-                    <div className={styles.emptyCategory}><ImageIcon size={22} /><span>该分类暂无模板</span></div>
-                  )}
+                  </article>
                 </div>
 
                 <footer>
-                  <button type="button" onClick={confirmTemplate}>使用此模板</button>
+                  <button
+                    type="button"
+                    disabled={
+                      draftValue === customTemplateId
+                      && draftPersonalTemplateId === null
+                      && customRoles.length !== requiredRoleCount
+                    }
+                    onClick={confirmTemplate}
+                  >
+                    {draftValue === customTemplateId
+                      && draftPersonalTemplateId === null
+                      && customRoles.length !== requiredRoleCount
+                      ? "请先继续编辑"
+                      : "使用此模板"}
+                  </button>
                 </footer>
               </>
             )}
@@ -1498,7 +1629,9 @@ export function VisualTemplatePicker({
                     <button type="button" aria-label="关闭大图预览" onClick={() => setPreviewRoleIndex(null)}><X size={19} /></button>
                   </header>
                   <img
-                    src={assetPath(detailTemplate.preview_images[previewRoleIndex % detailTemplate.preview_images.length])}
+                    src={resolveCustomImageSource(
+                      detailTemplate.preview_images[previewRoleIndex % detailTemplate.preview_images.length],
+                    )}
                     alt={`${detailTemplate.name}第 ${previewRoleIndex + 1} 张大图`}
                   />
                   <p>{detailTemplate.role_compositions?.[previewRoleIndex] ?? "围绕这一主题生成独立详情画面，并保持整套商品与视觉风格一致。"}</p>

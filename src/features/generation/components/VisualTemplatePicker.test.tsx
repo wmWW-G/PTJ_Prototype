@@ -78,11 +78,9 @@ describe("VisualTemplatePicker", () => {
 
     await user.click(screen.getByRole("button", { name: "更换模板" }));
     expect(screen.getByRole("dialog", { name: "选择生图模板" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "企业实力" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("模板分类")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "选择企业实力套图" }));
-    expect(screen.getByText("工厂规模与历史")).toBeInTheDocument();
-    expect(screen.getByText("认证与合作背书")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "使用此模板" }));
 
     expect(screen.queryByRole("dialog", { name: "选择生图模板" })).not.toBeInTheDocument();
@@ -111,7 +109,27 @@ describe("VisualTemplatePicker", () => {
     expect(within(minimalCard).getByText("高信息量")).toBeInTheDocument();
   });
 
-  it("高密度与极简详情都显示统一的信息量底线", async () => {
+  it("模板生图维度始终展示，切换选中状态不会增删卡片内容", async () => {
+    const user = userEvent.setup();
+    render(<ControlledPicker />);
+
+    await user.click(screen.getByRole("button", { name: "更换模板" }));
+    const standardCard = screen.getByRole("button", { name: "选择标准商品套图" });
+    const supplierCard = screen.getByRole("button", { name: "选择企业实力套图" });
+
+    // 两张未选中的模板也必须直接展示生图维度，避免用户点击后卡片突然变高。
+    expect(within(standardCard).getByText("商品主体")).toBeInTheDocument();
+    expect(within(standardCard).getByText("使用场景")).toBeInTheDocument();
+    expect(within(supplierCard).getByText("工厂规模与历史")).toBeInTheDocument();
+    expect(within(supplierCard).getByText("交付与服务")).toBeInTheDocument();
+
+    const dimensionCountBeforeSelection = within(supplierCard).getAllByRole("listitem").length;
+    await user.click(supplierCard);
+    expect(supplierCard).toHaveAttribute("aria-pressed", "true");
+    expect(within(supplierCard).getAllByRole("listitem")).toHaveLength(dimensionCountBeforeSelection);
+  });
+
+  it("预设详情使用与自定义模板相同的整套网格展开方式", async () => {
     const user = userEvent.setup();
     render(<ControlledPicker />);
 
@@ -119,12 +137,14 @@ describe("VisualTemplatePicker", () => {
     await user.click(screen.getByRole("button", { name: "查看高信息量商品套图详情" }));
     expect(screen.getByRole("heading", { name: "高信息量商品套图详情" })).toBeInTheDocument();
     let dialog = screen.getByRole("dialog", { name: "选择生图模板" });
-    expect(within(dialog).getByText("高信息量")).toBeInTheDocument();
+    expect(within(dialog).getByText("整套模板结构")).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("button", { name: /查看高信息量商品套图第/ })).toHaveLength(6);
 
     await user.click(screen.getByRole("button", { name: "返回模板列表" }));
     await user.click(screen.getByRole("button", { name: "查看极简质感套图详情" }));
     dialog = screen.getByRole("dialog", { name: "选择生图模板" });
-    expect(within(dialog).getByText("高信息量")).toBeInTheDocument();
+    expect(within(dialog).getByText("整套模板结构")).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("button", { name: /查看极简质感套图第/ })).toHaveLength(6);
   });
 
   it("每张模板卡都提供独立详情入口，并可从详情直接使用模板", async () => {
@@ -139,12 +159,11 @@ describe("VisualTemplatePicker", () => {
 
     await user.click(screen.getByRole("button", { name: "查看企业实力套图详情" }));
     expect(screen.getByRole("heading", { name: "企业实力套图详情" })).toBeInTheDocument();
-    expect(screen.getByText("逐张查看画面与信息结构")).toBeInTheDocument();
+    expect(screen.getByText("整套模板结构")).toBeInTheDocument();
     expect(screen.getByText("企业总览")).toBeInTheDocument();
-    expect(screen.getByText("可补充信息（均选填）")).toBeInTheDocument();
-    expect(screen.getAllByText("查看大图")).toHaveLength(6);
+    expect(screen.getAllByText("点击查看大图")).toHaveLength(6);
 
-    await user.click(screen.getByRole("button", { name: "选择并使用此模板" }));
+    await user.click(screen.getByRole("button", { name: "使用此模板" }));
     expect(screen.queryByRole("dialog", { name: "选择生图模板" })).not.toBeInTheDocument();
     expect(screen.getByText("企业实力套图")).toBeInTheDocument();
   });
@@ -221,8 +240,8 @@ describe("VisualTemplatePicker", () => {
     expect(screen.queryByRole("button", { name: "选择标准商品套图" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "查看采购决策详情" }));
-    expect(screen.getByText("共 8 张详情图")).toBeInTheDocument();
-    expect(screen.getAllByText("查看大图")).toHaveLength(8);
+    expect(within(screen.getByRole("dialog", { name: "选择生图模板" })).getByText("8 张 / 版")).toBeInTheDocument();
+    expect(screen.getAllByText("点击查看大图")).toHaveLength(8);
     await user.click(screen.getByRole("button", { name: /产品与应用总览/ }));
     expect(screen.getByRole("dialog", { name: "详情图大图预览" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "查看下一张" })).toBeEnabled();
@@ -239,10 +258,15 @@ describe("VisualTemplatePicker", () => {
     render(<ControlledPicker />);
 
     await user.click(screen.getByRole("button", { name: "更换模板" }));
-    await user.click(screen.getByRole("button", { name: "配置自定义套图" }));
+    await user.click(screen.getByRole("button", { name: "选择自定义套图" }));
+    await user.click(screen.getByRole("button", { name: "继续编辑" }));
     const dialog = screen.getByRole("dialog", { name: "选择生图模板" });
     await user.click(within(dialog).getByRole("button", { name: "修改第 1 张：商品主视觉" }));
 
+    // 用户尚未发起生成时只展示原图，避免把静态示意图误认为已生成的结果。
+    expect(within(dialog).getByAltText("修改前的原图")).toBeInTheDocument();
+    expect(within(dialog).queryByText("参考预览")).not.toBeInTheDocument();
+    expect(within(dialog).queryByAltText("AI 生成的新版本")).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "继续修改" })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "再生成一个" })).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "采用这张" })).toBeInTheDocument();
@@ -254,8 +278,11 @@ describe("VisualTemplatePicker", () => {
     const { unmount } = render(<ControlledPicker />);
 
     await user.click(screen.getByRole("button", { name: "更换模板" }));
-    expect(screen.getByRole("button", { name: "配置自定义套图" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "配置自定义套图" }));
+    const continueButton = screen.getByRole("button", { name: "继续编辑" });
+    expect(continueButton).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "选择自定义套图" }));
+    expect(continueButton).toBeEnabled();
+    await user.click(continueButton);
 
     const dialog = screen.getByRole("dialog", { name: "选择生图模板" });
     expect(within(dialog).getByText("AI 已经排好整套结构")).toBeInTheDocument();
@@ -297,27 +324,68 @@ describe("VisualTemplatePicker", () => {
 
     await user.click(within(dialog).getByRole("button", { name: "返回整套" }));
     expect(within(dialog).getByText("已采用 AI 新版本")).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "使用这套模板" }));
+    await user.click(within(dialog).getByRole("button", { name: "保存模板" }));
     expect(screen.queryByRole("dialog", { name: "选择生图模板" })).not.toBeInTheDocument();
-    expect(screen.getByText("自定义套图")).toBeInTheDocument();
+    expect(screen.getByText("我的模板02")).toBeInTheDocument();
     expect(screen.getByText("6 张 / 版")).toBeInTheDocument();
 
     // 重新挂载组件模拟刷新页面，确认模板不是只保存在 React 内存中。
     unmount();
     render(<ControlledPicker />);
     await user.click(screen.getByRole("button", { name: "更换模板" }));
-    await user.click(screen.getByRole("button", { name: "自定义" }));
-    const savedTemplateCard = screen.getByRole("article", { name: "我的模板：Logo 工艺展示" });
-    expect(within(savedTemplateCard).getByAltText("Logo 工艺展示模板预览")).toHaveAttribute(
+    const savedTemplateCard = screen.getByRole("article", { name: "我的模板：我的模板01" });
+    expect(within(savedTemplateCard).getByAltText("我的模板01模板预览")).toHaveAttribute(
       "src",
       "https://images.example.com/generated-slot-4.png",
     );
-    await user.click(within(savedTemplateCard).getByRole("button", { name: "打开我的模板：Logo 工艺展示" }));
+    const selectPersonalTemplate = within(savedTemplateCard).getByRole("button", { name: "选择我的模板01" });
+    await user.click(selectPersonalTemplate);
+    expect(selectPersonalTemplate).toHaveAttribute("aria-pressed", "true");
+    expect(within(dialog).queryByRole("heading", { name: /第 4 张/ })).not.toBeInTheDocument();
+
+    await user.click(within(savedTemplateCard).getByRole("button", { name: "查看我的模板01详情" }));
     const reopenedDialog = screen.getByRole("dialog", { name: "选择生图模板" });
-    expect(within(reopenedDialog).getByRole("heading", { name: "第 4 张 · Logo 工艺展示" })).toBeInTheDocument();
+    expect(within(reopenedDialog).getByRole("heading", { name: "我的模板01详情" })).toBeInTheDocument();
+    expect(within(reopenedDialog).getAllByText("点击查看大图")).toHaveLength(6);
+    expect(within(reopenedDialog).queryByRole("img", { name: "我的模板01第 4 张大图" })).not.toBeInTheDocument();
+    await user.click(within(reopenedDialog).getByRole("button", { name: /查看我的模板01第 4 张/ }));
+    expect(within(reopenedDialog).getByRole("img", { name: "我的模板01第 4 张大图" })).toHaveAttribute(
+      "src",
+      "https://images.example.com/generated-slot-4.png",
+    );
+
+    // “继续编辑”是独立入口：卡片点击仍只选中，但用户可以明确恢复保存时的编辑现场。
+    await user.click(within(reopenedDialog).getByRole("button", { name: "关闭大图预览" }));
+    await user.click(within(reopenedDialog).getByRole("button", { name: "返回模板列表" }));
+    const editablePersonalCard = screen.getByRole("article", { name: "我的模板：我的模板01" });
+    await user.click(within(editablePersonalCard).getByRole("button", { name: "继续编辑我的模板01" }));
+    expect(within(reopenedDialog).getByRole("heading", { name: "自定义套图" })).toBeInTheDocument();
+    expect(within(reopenedDialog).getByText("已采用 AI 新版本")).toBeInTheDocument();
+    await user.click(within(reopenedDialog).getByRole("button", { name: "修改第 4 张：Logo 工艺展示" }));
     expect(within(reopenedDialog).getByLabelText("告诉 AI 怎么修改这一张")).toHaveValue(
       "增加四种 Logo 工艺展示，整体更专业，文案由 AI 生成",
     );
+    expect(within(reopenedDialog).getByAltText("AI 生成的新版本")).toHaveAttribute(
+      "src",
+      "https://images.example.com/generated-slot-4.png",
+    );
+  });
+
+  it("点击保存模板后自动命名为我的模板01", async () => {
+    const user = userEvent.setup();
+    render(<ControlledPicker />);
+
+    await user.click(screen.getByRole("button", { name: "更换模板" }));
+    await user.click(screen.getByRole("button", { name: "选择自定义套图" }));
+    await user.click(screen.getByRole("button", { name: "继续编辑" }));
+    await user.click(screen.getByRole("button", { name: "保存模板" }));
+
+    expect(screen.getByText("我的模板01")).toBeInTheDocument();
+    const storedTemplates = JSON.parse(
+      localStorage.getItem("ptj.prototype.personal-templates.v1") ?? "[]",
+    ) as Array<{ name: string }>;
+    expect(storedTemplates).toHaveLength(1);
+    expect(storedTemplates[0]?.name).toBe("我的模板01");
   });
 
   it("采用结构细节候选图后保存并重开，向外提交固定 detail_callouts 配方", async () => {
@@ -338,7 +406,8 @@ describe("VisualTemplatePicker", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "更换模板" }));
-    await user.click(screen.getByRole("button", { name: "配置自定义套图" }));
+    await user.click(screen.getByRole("button", { name: "选择自定义套图" }));
+    await user.click(screen.getByRole("button", { name: "继续编辑" }));
     const dialog = screen.getByRole("dialog", { name: "选择生图模板" });
     await user.click(within(dialog).getByRole("button", { name: "修改第 2 张：结构细节" }));
     await user.click(within(dialog).getByRole("button", { name: "重新生成" }));
@@ -365,12 +434,10 @@ describe("VisualTemplatePicker", () => {
       />,
     );
     await user.click(screen.getByRole("button", { name: "更换模板" }));
-    await user.click(screen.getByRole("button", { name: "自定义" }));
-    const savedTemplate = screen.getByRole("article", { name: "我的模板：结构细节" });
-    await user.click(within(savedTemplate).getByRole("button", { name: "打开我的模板：结构细节" }));
+    const savedTemplate = screen.getByRole("article", { name: "我的模板：我的模板01" });
+    await user.click(within(savedTemplate).getByRole("button", { name: "选择我的模板01" }));
     const reopenedDialog = screen.getByRole("dialog", { name: "选择生图模板" });
-    await user.click(within(reopenedDialog).getByRole("button", { name: "返回整套" }));
-    await user.click(within(reopenedDialog).getByRole("button", { name: "使用这套模板" }));
+    await user.click(within(reopenedDialog).getByRole("button", { name: "使用此模板" }));
     expect(onCustomRolesChange).toHaveBeenCalledTimes(1);
     const reloadedRoles = onCustomRolesChange.mock.calls[0]?.[0];
     expect(reloadedRoles?.[1]?.layout_recipe_id).toBe("detail_callouts");
@@ -398,7 +465,8 @@ describe("VisualTemplatePicker", () => {
 
     render(<CustomListingPicker />);
     await user.click(screen.getByRole("button", { name: "更换模板" }));
-    await user.click(screen.getByRole("button", { name: "配置自定义详情图" }));
+    await user.click(screen.getByRole("button", { name: "选择自定义详情图" }));
+    await user.click(screen.getByRole("button", { name: "继续编辑" }));
 
     const dialog = screen.getByRole("dialog", { name: "选择生图模板" });
     expect(within(dialog).getByText("8 张 / 版")).toBeInTheDocument();
@@ -415,7 +483,8 @@ describe("VisualTemplatePicker", () => {
     render(<ControlledPicker />);
 
     await user.click(screen.getByRole("button", { name: "更换模板" }));
-    await user.click(screen.getByRole("button", { name: "配置自定义套图" }));
+    await user.click(screen.getByRole("button", { name: "选择自定义套图" }));
+    await user.click(screen.getByRole("button", { name: "继续编辑" }));
     const dialog = screen.getByRole("dialog", { name: "选择生图模板" });
     await user.click(within(dialog).getByRole("button", { name: "修改第 4 张：Logo 工艺展示" }));
 
@@ -442,7 +511,8 @@ describe("VisualTemplatePicker", () => {
     render(<ControlledPicker />);
 
     await user.click(screen.getByRole("button", { name: "更换模板" }));
-    await user.click(screen.getByRole("button", { name: "配置自定义套图" }));
+    await user.click(screen.getByRole("button", { name: "选择自定义套图" }));
+    await user.click(screen.getByRole("button", { name: "继续编辑" }));
     const dialog = screen.getByRole("dialog", { name: "选择生图模板" });
     await user.click(within(dialog).getByRole("button", { name: "修改第 1 张：商品主视觉" }));
     const referenceFile = new File(["cow"], "牛1.jpg", { type: "image/jpeg" });
@@ -461,7 +531,8 @@ describe("VisualTemplatePicker", () => {
     render(<ControlledPicker />);
 
     await user.click(screen.getByRole("button", { name: "更换模板" }));
-    await user.click(screen.getByRole("button", { name: "配置自定义套图" }));
+    await user.click(screen.getByRole("button", { name: "选择自定义套图" }));
+    await user.click(screen.getByRole("button", { name: "继续编辑" }));
     const dialog = screen.getByRole("dialog", { name: "选择生图模板" });
     await user.click(within(dialog).getByRole("button", { name: "修改第 2 张：结构细节" }));
     const pastedFile = new File(["pasted-image"], "粘贴的参考图.png", { type: "image/png" });

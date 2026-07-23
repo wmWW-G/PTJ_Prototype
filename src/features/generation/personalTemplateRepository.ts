@@ -31,6 +31,8 @@ export type PersonalTemplateImageType = Extract<ImageType, "set" | "listing">;
 export interface PersonalVisualTemplate {
   /** 浏览器本机内唯一的模板 ID。 */
   id: string;
+  /** 用户可见的顺序名称，例如“我的模板01”。 */
+  name: string;
   /** 模板所属的图片类型。 */
   imageType: PersonalTemplateImageType;
   /** 被修改图片在整套中的零基索引。 */
@@ -48,7 +50,27 @@ export interface PersonalVisualTemplate {
 }
 
 /** 新增个人模板时由界面提供的业务字段。 */
-export type SavePersonalVisualTemplateInput = Omit<PersonalVisualTemplate, "id" | "createdAt">;
+export type SavePersonalVisualTemplateInput = Omit<PersonalVisualTemplate, "id" | "name" | "createdAt">;
+
+/**
+ * 校验新增或更新个人模板时的业务字段。
+ *
+ * @param input 界面准备持久化的图片类型、槽位、图片和整套职责。
+ * @returns 校验通过时无返回值。
+ * @throws 职责数量、槽位或布局配方不合法时抛出 RangeError。
+ */
+function validatePersonalTemplateInput(input: SavePersonalVisualTemplateInput): void {
+  const expectedRoleCount = input.imageType === "listing" ? 8 : 6;
+  if (input.customRoles.length !== expectedRoleCount) {
+    throw new RangeError(`个人模板需要 ${expectedRoleCount} 个职责`);
+  }
+  if (!Number.isInteger(input.slotIndex) || input.slotIndex < 0 || input.slotIndex >= expectedRoleCount) {
+    throw new RangeError("个人模板槽位超出范围");
+  }
+  if (!input.customRoles.every(isCustomRoleSelection)) {
+    throw new RangeError("个人模板包含未登记的布局配方");
+  }
+}
 
 /**
  * 检查 LocalStorage 中的职责来源是否符合最小结构。
@@ -87,6 +109,8 @@ function isPersonalVisualTemplate(value: unknown): value is PersonalVisualTempla
   return expectedRoleCount > 0
     && typeof template.id === "string"
     && template.id.length > 0
+    && (template.name === undefined
+      || (typeof template.name === "string" && template.name.length > 0))
     && Number.isInteger(template.slotIndex)
     && (template.slotIndex ?? -1) >= 0
     && (template.slotIndex ?? expectedRoleCount) < expectedRoleCount
@@ -117,13 +141,16 @@ export function listPersonalVisualTemplates(): PersonalVisualTemplate[] {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) throw new TypeError("个人模板存储不是数组");
-    return parsed
+    const validTemplates = parsed
       .filter(isPersonalVisualTemplate)
-      .map((template) => ({
+      .map((template, index) => ({
         ...template,
+        // 兼容已经写入浏览器的 v1 记录；旧记录按当前存储顺序补齐可读名称。
+        name: template.name ?? `我的模板${String(index + 1).padStart(2, "0")}`,
         customRoles: template.customRoles.map((role) => ({ ...role })),
       }))
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    return validTemplates;
   } catch (error) {
     console.warn("[批图匠] 个人模板读取失败，已回退为空列表", error);
     return [];
@@ -140,28 +167,25 @@ export function listPersonalVisualTemplates(): PersonalVisualTemplate[] {
 export function savePersonalVisualTemplate(
   input: SavePersonalVisualTemplateInput,
 ): PersonalVisualTemplate {
-  const expectedRoleCount = input.imageType === "listing" ? 8 : 6;
-  if (input.customRoles.length !== expectedRoleCount) {
-    throw new RangeError(`个人模板需要 ${expectedRoleCount} 个职责`);
-  }
-  if (!Number.isInteger(input.slotIndex) || input.slotIndex < 0 || input.slotIndex >= expectedRoleCount) {
-    throw new RangeError("个人模板槽位超出范围");
-  }
-  if (!input.customRoles.every(isCustomRoleSelection)) {
-    throw new RangeError("个人模板包含未登记的布局配方");
-  }
+  validatePersonalTemplateInput(input);
 
   const now = new Date().toISOString();
   const randomPart = typeof globalThis.crypto?.randomUUID === "function"
     ? globalThis.crypto.randomUUID()
     : Math.random().toString(36).slice(2, 10);
+  const existingTemplates = listPersonalVisualTemplates();
+  const largestNameIndex = existingTemplates.reduce((largest, existingTemplate) => {
+    const match = /^我的模板(\d+)$/.exec(existingTemplate.name);
+    return match ? Math.max(largest, Number(match[1])) : largest;
+  }, 0);
   const template: PersonalVisualTemplate = {
     ...input,
     id: `personal-template-${Date.now()}-${randomPart}`,
+    // 名称由存储层统一编号，避免套图与详情图界面各自维护计数而产生重名。
+    name: `我的模板${String(largestNameIndex + 1).padStart(2, "0")}`,
     customRoles: input.customRoles.map((role) => ({ ...role })),
     createdAt: now,
   };
-  const existingTemplates = listPersonalVisualTemplates();
   localStorage.setItem(
     PERSONAL_TEMPLATE_STORAGE_KEY,
     JSON.stringify([template, ...existingTemplates]),
@@ -172,4 +196,47 @@ export function savePersonalVisualTemplate(
     slotIndex: template.slotIndex,
   });
   return template;
+}
+
+/**
+ * 覆盖更新一条已经保存的个人模板，同时保留原名称和唯一 ID。
+ *
+ * @param templateId 要更新的个人模板 ID。
+ * @param input 编辑器中最新的图片、指令和整套职责。
+ * @returns 更新后的完整个人模板。
+ * @throws 模板不存在时抛出 RangeError；业务字段不合法或 LocalStorage 写入失败时继续抛出对应异常。
+ */
+export function updatePersonalVisualTemplate(
+  templateId: string,
+  input: SavePersonalVisualTemplateInput,
+): PersonalVisualTemplate {
+  validatePersonalTemplateInput(input);
+  const existingTemplates = listPersonalVisualTemplates();
+  const existingTemplate = existingTemplates.find((template) => template.id === templateId);
+  if (!existingTemplate) {
+    throw new RangeError("要编辑的个人模板不存在");
+  }
+
+  const updatedTemplate: PersonalVisualTemplate = {
+    ...existingTemplate,
+    ...input,
+    id: existingTemplate.id,
+    name: existingTemplate.name,
+    customRoles: input.customRoles.map((role) => ({ ...role })),
+    // 更新时间决定“我的模板”列表顺序，最近编辑的模板会回到列表前面。
+    createdAt: new Date().toISOString(),
+  };
+  localStorage.setItem(
+    PERSONAL_TEMPLATE_STORAGE_KEY,
+    JSON.stringify([
+      updatedTemplate,
+      ...existingTemplates.filter((template) => template.id !== templateId),
+    ]),
+  );
+  console.info("[批图匠] 个人模板已更新", {
+    id: updatedTemplate.id,
+    imageType: updatedTemplate.imageType,
+    slotIndex: updatedTemplate.slotIndex,
+  });
+  return updatedTemplate;
 }
