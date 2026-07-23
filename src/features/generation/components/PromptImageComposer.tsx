@@ -32,7 +32,7 @@ interface PromptImageComposerProps {
   maxLength: number;
   onChange: (value: string) => void;
   onImagesChange: (urls: string[], files: File[]) => void;
-  /** 主图参考设计图更新回调；该组图片只负责视觉风格与构图。 */
+  /** 全部真实生图类型共用的参考设计图回调；该组图片只负责视觉风格与构图。 */
   onStyleImagesChange?: (urls: string[], files: File[]) => void;
   logoPosition: LogoPosition;
   onLogoChange: (file: File | null, position: LogoPosition) => void;
@@ -53,13 +53,13 @@ const DEFAULT_MAX_FILE_SIZE = 4 * 1024 * 1024;
  * 因此不会改变现有的后端上传和文生图 / 图生图自动分流逻辑。
  *
  * @param props.label 补充文字字段标题。
- * @param props.layout 输入区布局；main 会额外展示独立参考设计图。
+ * @param props.layout 输入区布局；两种布局均展示独立参考设计图。
  * @param props.value 当前文字内容。
  * @param props.placeholder 文字为空时展示的引导。
  * @param props.maxLength 允许输入的最大字符数。
  * @param props.onChange 文字更新回调。
  * @param props.onImagesChange 图片临时 URL 和原始文件更新回调。
- * @param props.onStyleImagesChange 主图参考设计图更新回调。
+ * @param props.onStyleImagesChange 参考设计图更新回调。
  * @param props.acceptedTypes 允许的 MIME 类型。
  * @param props.maxFileSize 单张图片字节上限。
  * @param props.maxImages 最多允许的参考图数量。
@@ -181,7 +181,7 @@ export function PromptImageComposer({
   }
 
   /**
-   * 保存唯一一张主图参考设计图。
+   * 保存唯一一张参考设计图。
    *
    * 参考设计图只负责构图和风格，父组件会把它写入独立请求字段；这能避免
    * 后端商品分析把竞品图中的商品、文字或品牌误当成用户自己的素材。
@@ -200,10 +200,10 @@ export function PromptImageComposer({
     const next = { file, url: URL.createObjectURL(file) };
     setStylePreview(next);
     onStyleImagesChange?.([next.url], [file]);
-    console.info("[批图匠] 主图参考设计已加入任务", { filename: file.name });
+    console.info("[批图匠] 参考设计已加入任务", { filename: file.name });
   }
 
-  /** 移除主图参考设计图，并同步释放浏览器临时 URL。 */
+  /** 移除参考设计图，并同步释放浏览器临时 URL。 */
   function removeStyleReference() {
     if (!stylePreview) return;
     URL.revokeObjectURL(stylePreview.url);
@@ -400,68 +400,46 @@ export function PromptImageComposer({
     <section
       className={`${styles.promptComposer} ${layout === "main" ? styles.mainPromptComposer : ""}`}
       aria-label={layout === "main" ? "主图素材与补充说明" : "商品图片与补充说明"}
+      // standard 布局的 composerShell 已处理粘贴；外层只给 main 绑定，避免
+      // 冒泡后把同一张剪贴板图片添加两次并遗留额外 Blob URL。
       onPaste={layout === "main" ? handlePaste : undefined}
     >
-      {layout === "main" && (
-        <section className={styles.mainReferenceCard} aria-label="参考设计图">
-          <header>
-            <span className={styles.mainReferenceIcon}><Palette size={18} /></span>
+      <section className={styles.mainReferenceCard} aria-label="参考设计图">
+        <header>
+          <span className={styles.mainReferenceIcon}><Palette size={18} /></span>
+          <div>
+            <strong>参考设计图</strong>
+            <small>{layout === "main" ? "参考它的构图、光线和画面风格" : "只学习整套的信息结构、构图和视觉风格"}</small>
+          </div>
+          <b>{stylePreview ? "1/1" : "0/1"}</b>
+        </header>
+
+        {stylePreview ? (
+          <div className={styles.mainSelectedAsset}>
+            <button type="button" aria-label={`查看参考设计图 ${stylePreview.file.name}`} onClick={() => setPreviewing(stylePreview)}>
+              <img src={stylePreview.url} alt={stylePreview.file.name} />
+            </button>
             <div>
-              <strong>参考设计图</strong>
-              <small>参考它的构图、光线和画面风格</small>
+              <strong>{stylePreview.file.name}</strong>
+              <small>{layout === "main" ? "仅学习构图与风格，不复制商品和品牌" : "只学习整套信息结构、构图和视觉风格，不复制商品和品牌"}</small>
             </div>
-            <b>{stylePreview ? "1/1" : "0/1"}</b>
-          </header>
+            <button type="button" aria-label="移除参考设计图" onClick={removeStyleReference}><X size={15} /></button>
+          </div>
+        ) : (
+          <div className={styles.mainReferenceDropzone} onDragOver={(event) => event.preventDefault()} onDrop={handleStyleDrop}>
+            <button type="button" aria-label="上传参考设计图" onClick={() => styleInputRef.current?.click()}>
+              <Upload size={19} />
+              <span><strong>拖拽图片到这里</strong><small>或点击选择 PNG、JPG、WebP</small></span>
+            </button>
+          </div>
+        )}
 
-          {stylePreview ? (
-            <div className={styles.mainSelectedAsset}>
-              <button
-                type="button"
-                aria-label={`查看参考设计图 ${stylePreview.file.name}`}
-                onClick={() => setPreviewing(stylePreview)}
-              >
-                <img src={stylePreview.url} alt={stylePreview.file.name} />
-              </button>
-              <div>
-                <strong>{stylePreview.file.name}</strong>
-                <small>仅学习构图与风格，不复制商品和品牌</small>
-              </div>
-              <button type="button" aria-label="移除参考设计图" onClick={removeStyleReference}>
-                <X size={15} />
-              </button>
-            </div>
-          ) : (
-            <div
-              className={styles.mainReferenceDropzone}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={handleStyleDrop}
-            >
-              <button
-                type="button"
-                aria-label="上传参考设计图"
-                onClick={() => styleInputRef.current?.click()}
-              >
-                <Upload size={19} />
-                <span><strong>拖拽图片到这里</strong><small>或点击选择 PNG、JPG、WebP</small></span>
-              </button>
-            </div>
-          )}
-
-          <input
-            ref={styleInputRef}
-            className={styles.composerFileInput}
-            type="file"
-            aria-label="选择参考设计图文件"
-            accept={acceptedTypes.join(",")}
-            tabIndex={-1}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) setStyleReference(file);
-              event.target.value = "";
-            }}
-          />
-        </section>
-      )}
+        <input ref={styleInputRef} className={styles.composerFileInput} type="file" aria-label="选择参考设计图文件" accept={acceptedTypes.join(",")} tabIndex={-1} onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) setStyleReference(file);
+          event.target.value = "";
+        }} />
+      </section>
 
       {layout === "main" && (
         <>
@@ -578,10 +556,10 @@ export function PromptImageComposer({
             </div>
             <div className={styles.composerHeadingActions}>
               {logoTriggerControl}
+              {logoSettingsPanel}
             </div>
           </header>
 
-          {logoSettingsPanel}
           <div
             className={`${styles.composerShell} ${isDragging ? styles.composerDragging : ""}`}
             role="group"

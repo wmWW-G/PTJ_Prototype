@@ -68,8 +68,8 @@ const templateIds: Record<ImageType, string> = {
 };
 type TemplatedImageType = Extract<ImageType, "set" | "listing">;
 const defaultVisualTemplateIds: Record<TemplatedImageType, string> = {
-  set: "standard_product",
-  listing: "b2b_procurement_listing",
+  set: "dense_product_set",
+  listing: "dense_product_listing",
 };
 const modeResultImages: Record<GenerationMode, string[]> = {
   "text-to-image": [
@@ -252,7 +252,7 @@ export function GenerationPage({ mode }: GenerationPageProps) {
     ? customVisualRoles[imageType]
     : [];
   const activeGenerationMode: Extract<GenerationMode, "text-to-image" | "image-to-image"> =
-    sourceFiles.length > 0 || (imageType === "main" && styleFiles.length > 0) || logoFile
+    sourceFiles.length > 0 || styleFiles.length > 0 || logoFile
       ? "image-to-image"
       : "text-to-image";
   const slotCount =
@@ -354,14 +354,16 @@ export function GenerationPage({ mode }: GenerationPageProps) {
     if (isGenerating) return;
     if (mode !== "generate") return;
     const typedRequirement = prompt.trim();
-    if (!typedRequirement && sourceFiles.length === 0) {
+    if (!typedRequirement && sourceFiles.length === 0 && styleFiles.length === 0) {
       setLiveError("请先上传商品参考图，或填写补充文字要求");
       return;
     }
     // 后端 Planner 需要非空文本。用户只上传图片时，用中性的执行说明补齐，
     // 不虚构商品卖点，也不强迫用户为了提交而重复描述图片内容。
     const requirement = typedRequirement || (
-      imageType === "main"
+      sourceFiles.length === 0 && styleFiles.length > 0
+        ? "请只学习参考设计图的整套信息结构、构图和视觉风格；不得把其中的商品、品牌或文字当作商品事实。"
+        : imageType === "main"
         ? "请以已上传的产品素材图为主体，保留商品真实外观与关键特征；参考设计图只用于构图、光线与画面风格。"
         : "请以已上传的商品参考图为主体，保留商品真实外观与关键特征，并按当前图片类型生成电商图片。"
     );
@@ -379,12 +381,11 @@ export function GenerationPage({ mode }: GenerationPageProps) {
       const referenceAssets = await Promise.all(
         sourceFiles.map((file) => uploadReference(file, controller.signal)),
       );
-      // 主图参考设计图单独上传和传参，只用于学习构图与风格。
-      const styleReferenceAssets = imageType === "main"
-        ? await Promise.all(
-          styleFiles.map((file) => uploadReference(file, controller.signal)),
-        )
-        : [];
+      // 全部真实生图类型均可携带一张参考设计图；它始终独立上传和传参，
+      // 只学习信息结构与视觉风格，绝不混入决定商品身份的产品素材数组。
+      const styleReferenceAssets = await Promise.all(
+        styleFiles.map((file) => uploadReference(file, controller.signal)),
+      );
       // Logo 复用同一受控上传接口，但在请求中保持独立字段，避免商品分析误判。
       const logoAsset = logoFile
         ? await uploadReference(logoFile, controller.signal)

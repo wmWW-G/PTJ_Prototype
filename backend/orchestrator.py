@@ -25,9 +25,14 @@ from .domain import (
     VisualTemplateDefinition,
 )
 from .limiter import AsyncRateLimiter
+from .planner import _meets_density_contract
 from .providers import ImageProvider
 from .templates import get_template
-from .visual_templates import build_custom_visual_template, get_visual_template
+from .visual_templates import (
+    REFERENCE_LEVEL_INFORMATION_FRAME,
+    build_custom_visual_template,
+    get_visual_template,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -186,7 +191,7 @@ class GenerationOrchestrator:
             Prompt 内容保持不变、槽位身份已经规范化的计划。
 
         Raises:
-            ValueError: 槽位数量或索引与服务器模板不一致时抛出。
+            ValueError: 槽位数量、索引或高信息密度契约与服务器要求不一致时抛出。
         """
 
         expected_indices = [slot.index for slot in template.slots]
@@ -206,6 +211,11 @@ class GenerationOrchestrator:
             )
             for position, item in enumerate(plan.image_prompts)
         ]
+        if not all(
+            _meets_density_contract(item, visual_template.density_profile)
+            for item in normalized_prompts
+        ):
+            raise ValueError("已确认 Prompt 未满足高信息密度契约")
         return plan.model_copy(update={"image_prompts": normalized_prompts})
 
     async def _execute_image(
@@ -245,6 +255,23 @@ class GenerationOrchestrator:
         started = time.monotonic()
         retries: list[tuple[int, str, float]] = []
         full_prompt = f"{global_prompt}\n\n{image_prompt.prompt}"
+        if image_prompt.information_units:
+            # kind 决定主视觉、细节特写等构图职责，必须传给模型；但它和 source
+            # 都不能污染成图片中的可见文字。source 仅服务于后端事实校验，无须下发。
+            unit_lines = "\n".join(
+                f"- 内部构图类型={unit.kind}（类型名不得作为画面文字）；内容={unit.content}"
+                for unit in image_prompt.information_units
+            )
+            full_prompt += (
+                "\n\n内部构图信息单元（类型名不得作为画面可见文本）：\n"
+                f"{unit_lines}"
+            )
+        if image_prompt.visible_text:
+            visible_copy = "；".join(image_prompt.visible_text)
+            full_prompt += (
+                "\n\n仅尝试呈现以下已确认文案，不得添加其他硬信息，优先保持清晰可读："
+                f"{visible_copy}。"
+            )
 
         async def operation() -> GeneratedBinary:
             """按依赖类型选择文生图或图生图。"""
@@ -497,6 +524,18 @@ class GenerationOrchestrator:
                         supplemental_info=supplemental_info,
                     )
                 global_prompt = plan.global_consistency_prompt
+                # Planner 会把逐张职责写入 image prompt，但已确认计划可能来自
+                # 较早版本。这里再次把统一最低框架写入最终全局 Prompt，确保
+                # 图片模型实际收到标题、副标题、四个图文模块与 80% 占用要求；
+                # 同时 plan_ready 会把这段展示给用户审核，不存在隐藏规则。
+                if (
+                    visual_template.density_profile.level == "high"
+                    and REFERENCE_LEVEL_INFORMATION_FRAME not in global_prompt
+                ):
+                    global_prompt += (
+                        "\n\n高信息量成图硬约束："
+                        f"{REFERENCE_LEVEL_INFORMATION_FRAME}"
+                    )
                 style_reference_constraint = (
                         "\n\n参考图片序列中，用户产品素材之后、品牌 Logo 之前的图片是参考设计图。"
                         "只能学习其构图层级、镜头视角、光线、配色和留白节奏；不得复制其中的"

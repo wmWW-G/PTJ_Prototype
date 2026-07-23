@@ -196,6 +196,7 @@
 
 .promptComposer { position: relative; margin: 0 0 22px; }
 .mainPromptComposer { display: grid; gap: 12px; }
+.promptComposer:not(.mainPromptComposer) > .mainReferenceCard { margin-bottom: 12px; }
 .mainReferenceCard {
   position: relative;
   overflow: hidden;
@@ -333,7 +334,7 @@
   font-weight: 750;
 }
 .composerHeading > small { color: var(--ink-500); font-size: 9px; }
-.composerHeadingActions { display: flex; align-items: center; gap: 8px; }
+.composerHeadingActions { position: relative; display: flex; align-items: center; gap: 8px; }
 .composerHeadingActions > small { color: var(--ink-500); font-size: 9px; }
 .logoTrigger {
   height: 28px;
@@ -883,6 +884,7 @@ a.historyRow:hover { background: var(--brand-50); }
 .promptReviewRow > span { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; color: var(--brand-700); background: var(--brand-50); font-size: 9px; font-weight: 800; }
 .promptReviewRow > div { min-width: 0; }
 .promptReviewRow strong { display: block; color: var(--ink-900); font-size: 12px; }
+.promptDensitySummary { display: block; width: max-content; max-width: 100%; margin-top: 5px; padding: 3px 6px; border-radius: 5px; color: var(--brand-700); background: var(--brand-50); font-size: 8px; font-weight: 750; }
 .promptReviewRow p { margin: 5px 0 0; color: var(--ink-700); font-size: 11px; line-height: 1.65; white-space: pre-wrap; }
 .promptReviewRow small { display: block; margin-top: 6px; color: var(--ink-500); font-size: 9px; line-height: 1.5; }
 .promptReviewRow > button { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 7px; color: var(--ink-500); background: white; }

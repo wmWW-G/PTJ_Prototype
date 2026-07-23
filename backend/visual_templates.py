@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from .domain import (
     CustomVisualRoleSelection,
+    InformationDensityProfile,
     ImageType,
+    LayoutRecipeId,
     VisualTemplateDefinition,
     VisualTemplateField,
 )
@@ -38,7 +40,153 @@ def _field(key: str, label: str, placeholder: str) -> VisualTemplateField:
     )
 
 
+# 构图文本只在服务器维护，既能保障固定的高密度输出，也避免客户端把任意
+# Prompt 拼进职责定义。ID 的 Literal 类型与领域层共同构成白名单。
+LAYOUT_RECIPES: dict[LayoutRecipeId, str] = {
+    "commercial_overview": "1 个醒目短标题；1 个占画面 45%–55% 的主商品；3–5 个颜色或款式变体；2–3 个基于已确认事实的卖点或交易徽章；有效内容约占画布 80%",
+    "detail_callouts": "1 个短标题；1 个完整主商品；2–3 个圆形或几何放大特写；1 个辅助角度；3–5 条引线标签；有效内容约占画布 80%",
+    "benefit_evidence": "1 个主商品；3 个真实卖点模块；每个卖点配对应局部证据或使用动作；另配 1–2 个辅助视觉；禁止只有图标没有证据",
+    "variant_matrix": "1 个主商品；4–6 个颜色、款式或组合变体；2–3 条选择说明；变体整齐但避免无意义重复",
+    "craft_options": "1 个主商品；3–4 个材质或工艺局部样片；每个样片配短标签；未确认的工艺只作中性结构示意",
+    "application_matrix": "1 个主商品；2–3 个真实应用场景或采购对象；3 条用途短标签；商品在所有场景中保持同一身份",
+    "quality_proof": "1 个主商品或成品；3 个来料、过程、成品检查步骤；2 个工具或细节证据；只显示用户确认的认证文字",
+    "packaging_trade": "商品与包装同画面；3 个合作或包装步骤；2–3 个已确认交易信息徽章；未提供 MOQ、交期或认证时留出普通卖点而不编造",
+}
+
+
+HIGH_DENSITY_PROFILE = InformationDensityProfile(
+    level="high",
+    min_information_units=9,
+    max_information_units=12,
+    min_supporting_visuals=4,
+    min_visible_labels=5,
+    max_visible_labels=8,
+    target_occupancy_percent=80,
+)
+
+
+# 用户确认的参考图并不是“有几个标签”就算高信息量，而是每张都同时具备
+# 标题层级、主商品、多个局部证据和可读解释。把最低框架集中在这里，能让
+# 当前九套模板和未来新增模板都遵守同一条底线；极简、生活方式只改变视觉
+# 语言，不能再退化成纯摄影或大片留白。
+REFERENCE_LEVEL_INFORMATION_FRAME = (
+    "必须包含 1 个醒目标题和 1 个解释副标题；主商品或主场景占画面 40%–55%；"
+    "至少 4 个辅助视觉模块，每个模块必须同时包含图片、短标签和一句解释；"
+    "至少 5 处可见标签，目标有效内容占比约 80%；禁止纯摄影、大片空白、"
+    "只有图标没有解释，以及未经确认的数字、认证或交易承诺。"
+)
+
+
+def _reference_level_composition(role: str, specific_composition: str) -> str:
+    """把单张职责的专属构图叠加到统一图文解说最低框架。
+
+    Args:
+        role: 当前槽位在模板中的用户可见职责名称。
+        specific_composition: 该职责原有的场景、流程或排版要求。
+
+    Returns:
+        同时包含统一最低密度与职责差异的完整构图要求。
+
+    Raises:
+        不主动抛出异常；输入均来自服务器登记模板。
+    """
+
+    return (
+        f"{REFERENCE_LEVEL_INFORMATION_FRAME}"
+        f"本图职责“{role}”：{specific_composition}"
+    )
+
+
+def _dense_product_fields() -> list[VisualTemplateField]:
+    """返回高密度商品信息图统一的真实资料字段。
+
+    Args:
+        无。
+
+    Returns:
+        所有字段均选填、但硬信息明确要求只填真实资料的字段列表。
+
+    Raises:
+        Pydantic 校验失败时抛出 ``ValidationError``。
+    """
+
+    return [
+        _field("product_name", "产品名称", "例如：棒球帽"),
+        _field("core_selling_points", "核心卖点", "只填真实资料，例如：可调节帽围、透气面料"),
+        _field("material_craft", "材质 / 工艺", "只填真实资料，例如：棉质、刺绣"),
+        _field("colors_variants", "颜色 / 款式", "只填真实资料，例如：黑色、卡其色、藏蓝色"),
+        _field("customization_options", "定制方向", "只填真实资料，例如：Logo 刺绣、吊牌、包装"),
+        _field("moq", "MOQ", "只填真实资料；未确认请留空"),
+        _field("lead_time", "交期", "只填真实资料；未确认请留空"),
+        _field("certifications", "认证", "只填真实资料；未确认请留空"),
+        _field("packaging_shipping", "包装 / 运输", "只填真实资料，例如：礼盒、外箱、托盘"),
+        _field("visible_copy", "希望出现的文案", "只填写必须准确出现的文字"),
+    ]
+
+
 VISUAL_TEMPLATES: dict[str, VisualTemplateDefinition] = {
+    "dense_product_set": VisualTemplateDefinition(
+        id="dense_product_set",
+        image_types=["set"],
+        name="高信息量商品套图",
+        category="高密度信息图",
+        description="六张商品采购信息图；预览棒球帽图片自带英文仅作版式示例，不可当作商品事实或文案。",
+        art_direction="面向采购决策的高信息密度商品信息图：每张严格执行服务器构图配方，保留清楚商品身份、真实证据与可读标签，避免编造硬信息。",
+        information_focus=["采购总览", "结构细节", "卖点证据", "颜色款式", "材质与 Logo 工艺", "包装与合作"],
+        role_highlights=["商品采购总览", "结构细节拆解", "核心卖点证据", "颜色款式矩阵", "材质与 Logo 工艺", "包装与合作信息"],
+        role_compositions=[
+            LAYOUT_RECIPES["commercial_overview"],
+            LAYOUT_RECIPES["detail_callouts"],
+            LAYOUT_RECIPES["benefit_evidence"],
+            LAYOUT_RECIPES["variant_matrix"],
+            LAYOUT_RECIPES["craft_options"],
+            LAYOUT_RECIPES["packaging_trade"],
+        ],
+        generated_anchor_strategy="independent",
+        preview_images=[
+            "demo/templates-v2/high-density/set/01-procurement-overview.jpg",
+            "demo/templates-v2/high-density/set/02-detail-callouts.jpg",
+            "demo/templates-v2/high-density/set/03-benefit-evidence.jpg",
+            "demo/templates-v2/high-density/set/04-variant-matrix.jpg",
+            "demo/templates-v2/high-density/set/05-craft-options.jpg",
+            "demo/templates-v2/high-density/set/06-packaging-trade.jpg",
+        ],
+        fields=_dense_product_fields(),
+        density_profile=HIGH_DENSITY_PROFILE,
+    ),
+    "dense_product_listing": VisualTemplateDefinition(
+        id="dense_product_listing",
+        image_types=["listing"],
+        name="高信息量采购详情",
+        category="高密度信息图",
+        description="八张商品采购详情图；预览棒球帽图片自带英文仅作版式示例，不可当作商品事实或文案。",
+        art_direction="面向采购决策的高信息密度商品详情图：每张严格执行服务器构图配方，真实资料优先，未确认的 MOQ、交期和认证绝不编造。",
+        information_focus=["采购总览", "结构细节", "卖点证据", "应用场景", "颜色款式", "材质与 Logo 工艺", "品质信任", "包装与合作"],
+        role_highlights=["商品采购总览", "结构细节拆解", "核心卖点证据", "应用场景矩阵", "颜色款式矩阵", "材质与 Logo 工艺", "品质与信任证据", "包装与合作信息"],
+        role_compositions=[
+            LAYOUT_RECIPES["commercial_overview"],
+            LAYOUT_RECIPES["detail_callouts"],
+            LAYOUT_RECIPES["benefit_evidence"],
+            LAYOUT_RECIPES["application_matrix"],
+            LAYOUT_RECIPES["variant_matrix"],
+            LAYOUT_RECIPES["craft_options"],
+            LAYOUT_RECIPES["quality_proof"],
+            LAYOUT_RECIPES["packaging_trade"],
+        ],
+        generated_anchor_strategy="independent",
+        preview_images=[
+            "demo/templates-v2/high-density/listing/01-procurement-overview.jpg",
+            "demo/templates-v2/high-density/listing/02-detail-callouts.jpg",
+            "demo/templates-v2/high-density/listing/03-benefit-evidence.jpg",
+            "demo/templates-v2/high-density/listing/04-application-matrix.jpg",
+            "demo/templates-v2/high-density/listing/05-variant-matrix.jpg",
+            "demo/templates-v2/high-density/listing/06-craft-options.jpg",
+            "demo/templates-v2/high-density/listing/07-quality-proof.jpg",
+            "demo/templates-v2/high-density/listing/08-packaging-trade.jpg",
+        ],
+        fields=_dense_product_fields(),
+        density_profile=HIGH_DENSITY_PROFILE,
+    ),
     "standard_product": VisualTemplateDefinition(
         id="standard_product",
         image_types=["main", "set", "poster"],
@@ -52,12 +200,12 @@ VISUAL_TEMPLATES: dict[str, VisualTemplateDefinition] = {
         information_focus=["商品主体", "核心卖点", "材质细节", "使用场景"],
         role_highlights=["商品主视觉", "核心卖点", "细节特写", "使用场景", "功能展示", "组合总览"],
         preview_images=[
-            "demo/generated/mug-front.jpg",
-            "demo/generated/mug-handle.jpg",
-            "demo/generated/mug-rim.jpg",
-            "demo/generated/mug-home.jpg",
-            "demo/generated/mug-office.jpg",
-            "demo/generated/mug-combo.jpg",
+            "demo/templates-v2/product/standard/01-hero.jpg",
+            "demo/templates-v2/product/standard/02-benefits.jpg",
+            "demo/templates-v2/product/standard/03-detail.jpg",
+            "demo/templates-v2/product/standard/04-lifestyle.jpg",
+            "demo/templates-v2/product/standard/05-function.jpg",
+            "demo/templates-v2/product/standard/06-combination.jpg",
         ],
         fields=[
             _field("product_name", "产品名称", "例如：防烫陶瓷马克杯"),
@@ -92,12 +240,12 @@ VISUAL_TEMPLATES: dict[str, VisualTemplateDefinition] = {
         # 图生图模型会同时复制商品和整张版式。因此纯文生图时让六个职责独立构图。
         generated_anchor_strategy="independent",
         preview_images=[
-            "demo/generated/ai-supplier-factory.jpg",
-            "demo/generated/ai-supplier-warehouse.jpg",
-            "demo/generated/ai-supplier-quality.jpg",
-            "demo/generated/ai-supplier-design.jpg",
-            "demo/generated/ai-supplier-warehouse.jpg",
-            "demo/generated/ai-supplier-factory.jpg",
+            "demo/templates-v2/supplier-strength/01-company-overview.jpg",
+            "demo/templates-v2/supplier-strength/02-warehouse-delivery.jpg",
+            "demo/templates-v2/supplier-strength/03-quality-process.jpg",
+            "demo/templates-v2/supplier-strength/04-rd-customization.jpg",
+            "demo/templates-v2/supplier-strength/05-quality-system.jpg",
+            "demo/templates-v2/supplier-strength/06-capacity-service.jpg",
         ],
         fields=[
             _field("company_name", "公司名称", "例如：Ningbo Example Manufacturing Co., Ltd."),
@@ -115,20 +263,20 @@ VISUAL_TEMPLATES: dict[str, VisualTemplateDefinition] = {
         image_types=["set"],
         name="极简质感套图",
         category="极简质感",
-        description="少文字、强材质和留白，适合强调高级感的商品。",
+        description="以克制配色和精确网格呈现材质、轮廓与卖点，保持完整图文解说密度。",
         art_direction=(
-            "高端编辑式商品摄影，大面积留白、柔和定向光、精细材质微距和克制色彩。"
-            "信息层级少而准，不使用拥挤拼贴。"
+            "高端编辑式商品信息图，使用柔和定向光、精细材质微距、克制色彩与紧凑模块化网格。"
+            "标题、副标题与四个图文模块必须完整可读；极简只体现在视觉语言，不减少信息量。"
         ),
         information_focus=["材质与工艺", "产品轮廓", "品牌语气", "核心价值"],
         role_highlights=["极简主视觉", "材质微距", "轮廓侧影", "高级场景", "单一卖点", "品牌收束"],
         preview_images=[
-            "demo/generated/mug-front.jpg",
-            "demo/generated/mug-rim.jpg",
-            "demo/generated/mug-handle.jpg",
-            "demo/generated/mug-office.jpg",
-            "demo/generated/mug-home.jpg",
-            "demo/generated/mug-combo.jpg",
+            "demo/templates-v2/product/minimal/01-hero.jpg",
+            "demo/templates-v2/product/minimal/02-material-macro.jpg",
+            "demo/templates-v2/product/minimal/03-silhouette.jpg",
+            "demo/templates-v2/product/minimal/04-premium-scene.jpg",
+            "demo/templates-v2/product/minimal/05-single-benefit.jpg",
+            "demo/templates-v2/product/minimal/06-brand-finale.jpg",
         ],
         fields=[
             _field("product_name", "产品名称", "例如：骨瓷咖啡杯"),
@@ -151,12 +299,12 @@ VISUAL_TEMPLATES: dict[str, VisualTemplateDefinition] = {
         information_focus=["目标人群", "使用场景", "情绪氛围", "商品带来的变化"],
         role_highlights=["场景开篇", "人物使用", "关键细节", "功能瞬间", "情绪氛围", "商品收束"],
         preview_images=[
-            "demo/generated/mug-home.jpg",
-            "demo/generated/mug-office.jpg",
-            "demo/generated/mug-front.jpg",
-            "demo/generated/mug-combo.jpg",
-            "demo/generated/mug-handle.jpg",
-            "demo/generated/mug-rim.jpg",
+            "demo/templates-v2/product/lifestyle/01-opening.jpg",
+            "demo/templates-v2/product/lifestyle/02-person-using.jpg",
+            "demo/templates-v2/product/lifestyle/03-key-detail.jpg",
+            "demo/templates-v2/product/lifestyle/04-function-moment.jpg",
+            "demo/templates-v2/product/lifestyle/05-mood.jpg",
+            "demo/templates-v2/product/lifestyle/06-product-finale.jpg",
         ],
         fields=[
             _field("target_audience", "目标人群", "例如：城市独居青年"),
@@ -200,14 +348,14 @@ VISUAL_TEMPLATES: dict[str, VisualTemplateDefinition] = {
         ],
         generated_anchor_strategy="independent",
         preview_images=[
-            "demo/generated/b2b/procurement/01-product-overview.jpg",
-            "demo/generated/b2b/procurement/02-product-introduction.jpg",
-            "demo/generated/b2b/procurement/03-buyer-value.jpg",
-            "demo/generated/b2b/procurement/04-structure-usage.jpg",
-            "demo/generated/b2b/procurement/05-material-craft.jpg",
-            "demo/generated/b2b/procurement/06-application-scenes.jpg",
-            "demo/generated/b2b/procurement/07-quality-process.jpg",
-            "demo/generated/b2b/procurement/08-packaging-cooperation.jpg",
+            "demo/templates-v2/b2b/procurement/01-product-overview.jpg",
+            "demo/templates-v2/b2b/procurement/02-product-introduction.jpg",
+            "demo/templates-v2/b2b/procurement/03-buyer-value.jpg",
+            "demo/templates-v2/b2b/procurement/04-structure-usage.jpg",
+            "demo/templates-v2/b2b/procurement/05-material-craft.jpg",
+            "demo/templates-v2/b2b/procurement/06-application-scenes.jpg",
+            "demo/templates-v2/b2b/procurement/07-quality-process.jpg",
+            "demo/templates-v2/b2b/procurement/08-packaging-cooperation.jpg",
         ],
         fields=[
             _field("product_name", "产品名称", "例如：双层防烫陶瓷杯"),
@@ -252,14 +400,14 @@ VISUAL_TEMPLATES: dict[str, VisualTemplateDefinition] = {
         ],
         generated_anchor_strategy="independent",
         preview_images=[
-            "demo/generated/b2b/oem/01-customization-overview.jpg",
-            "demo/generated/b2b/oem/02-product-development.jpg",
-            "demo/generated/b2b/oem/03-material-color.jpg",
-            "demo/generated/b2b/oem/04-structure-accessories.jpg",
-            "demo/generated/b2b/oem/05-logo-surface-craft.jpg",
-            "demo/generated/b2b/oem/06-packaging-manual.jpg",
-            "demo/generated/b2b/oem/07-sampling-production.jpg",
-            "demo/generated/b2b/oem/08-quality-delivery.jpg",
+            "demo/templates-v2/b2b/oem/01-customization-overview.jpg",
+            "demo/templates-v2/b2b/oem/02-product-development.jpg",
+            "demo/templates-v2/b2b/oem/03-material-color.jpg",
+            "demo/templates-v2/b2b/oem/04-structure-accessories.jpg",
+            "demo/templates-v2/b2b/oem/05-logo-surface-craft.jpg",
+            "demo/templates-v2/b2b/oem/06-packaging-manual.jpg",
+            "demo/templates-v2/b2b/oem/07-sampling-production.jpg",
+            "demo/templates-v2/b2b/oem/08-quality-delivery.jpg",
         ],
         fields=[
             _field("product_name", "产品名称", "例如：可定制陶瓷马克杯"),
@@ -304,14 +452,14 @@ VISUAL_TEMPLATES: dict[str, VisualTemplateDefinition] = {
         ],
         generated_anchor_strategy="independent",
         preview_images=[
-            "demo/generated/b2b/fulfillment/01-factory-team.jpg",
-            "demo/generated/b2b/fulfillment/02-production-craft.jpg",
-            "demo/generated/b2b/fulfillment/03-incoming-inspection.jpg",
-            "demo/generated/b2b/fulfillment/04-process-qc.jpg",
-            "demo/generated/b2b/fulfillment/05-final-inspection.jpg",
-            "demo/generated/b2b/fulfillment/06-testing-capability.jpg",
-            "demo/generated/b2b/fulfillment/07-warehouse-loading.jpg",
-            "demo/generated/b2b/fulfillment/08-project-fulfillment.jpg",
+            "demo/templates-v2/b2b/fulfillment/01-factory-team.jpg",
+            "demo/templates-v2/b2b/fulfillment/02-production-craft.jpg",
+            "demo/templates-v2/b2b/fulfillment/03-incoming-inspection.jpg",
+            "demo/templates-v2/b2b/fulfillment/04-process-qc.jpg",
+            "demo/templates-v2/b2b/fulfillment/05-final-inspection.jpg",
+            "demo/templates-v2/b2b/fulfillment/06-testing-capability.jpg",
+            "demo/templates-v2/b2b/fulfillment/07-warehouse-loading.jpg",
+            "demo/templates-v2/b2b/fulfillment/08-project-fulfillment.jpg",
         ],
         fields=[
             _field("company_name", "公司名称", "例如：Ningbo Example Manufacturing Co., Ltd."),
@@ -322,6 +470,44 @@ VISUAL_TEMPLATES: dict[str, VisualTemplateDefinition] = {
         ],
     ),
 }
+
+
+def _apply_reference_level_density() -> None:
+    """在模块加载时给全部视觉模板应用统一高信息量契约。
+
+    已登记职责若有专属构图则完整保留；旧模板没有 ``role_compositions`` 时，
+    会得到围绕当前职责的独立信息图要求。集中处理能防止未来新增模板忘记声明
+    high profile，造成“模板预览很丰富、真实生成却很空”的不一致。
+
+    Args:
+        无；函数只规范化本模块的 ``VISUAL_TEMPLATES`` 注册表。
+
+    Returns:
+        无返回值；原地更新每套模板的构图数组和密度 profile。
+
+    Raises:
+        不主动抛出异常；模板对象由 Pydantic 在创建阶段完成结构校验。
+    """
+
+    for template in VISUAL_TEMPLATES.values():
+        normalized_compositions: list[str] = []
+        for index, role in enumerate(template.role_highlights):
+            specific_composition = (
+                template.role_compositions[index]
+                if index < len(template.role_compositions)
+                else (
+                    "围绕该职责使用独立的信息图骨架，主视觉与辅助证据必须针对"
+                    "本图主题，不得复制同套其他图片的模块安排。"
+                )
+            )
+            normalized_compositions.append(
+                _reference_level_composition(role, specific_composition)
+            )
+        template.role_compositions = normalized_compositions
+        template.density_profile = HIGH_DENSITY_PROFILE.model_copy(deep=True)
+
+
+_apply_reference_level_density()
 
 
 def get_visual_template(template_id: str) -> VisualTemplateDefinition:
@@ -374,6 +560,9 @@ def build_custom_visual_template(
     preview_images: list[str] = []
     source_templates: list[VisualTemplateDefinition] = []
     fields_by_key: dict[str, VisualTemplateField] = {}
+    # 只要使用任一服务器配方，就提升为固定 high；否则按来源模板最高等级继承，
+    # 以免自由组合时悄悄把已有高密度职责降回默认 balanced。
+    uses_registered_recipe = False
 
     for selection in selections:
         source = get_visual_template(selection.template_id)
@@ -383,11 +572,15 @@ def build_custom_visual_template(
             raise ValueError(f"模板 {source.name} 不存在所选职责")
 
         role_highlights.append(source.role_highlights[selection.role_index])
-        role_compositions.append(
+        composition = (
             source.role_compositions[selection.role_index]
             if selection.role_index < len(source.role_compositions)
             else "围绕当前职责生成独立画面，并保持整套商品与视觉风格一致"
         )
+        if selection.layout_recipe_id is not None:
+            composition = f"{composition}\n服务器布局配方：{LAYOUT_RECIPES[selection.layout_recipe_id]}"
+            uses_registered_recipe = True
+        role_compositions.append(composition)
         if source.preview_images:
             preview_images.append(
                 source.preview_images[selection.role_index % len(source.preview_images)]
@@ -397,6 +590,16 @@ def build_custom_visual_template(
             fields_by_key.setdefault(field.key, field)
 
     type_name = "套图" if image_type == "set" else "详情图"
+    density_rank = {"minimal": 0, "balanced": 1, "high": 2}
+    inherited_profile = max(
+        (item.density_profile for item in source_templates),
+        key=lambda profile: density_rank[profile.level],
+    )
+    density_profile = (
+        HIGH_DENSITY_PROFILE.model_copy(deep=True)
+        if uses_registered_recipe
+        else inherited_profile.model_copy(deep=True)
+    )
     return VisualTemplateDefinition(
         id=f"custom_{image_type}",
         image_types=[image_type],
@@ -417,4 +620,5 @@ def build_custom_visual_template(
         ),
         preview_images=preview_images,
         fields=list(fields_by_key.values())[:16],
+        density_profile=density_profile,
     )

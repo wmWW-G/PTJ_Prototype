@@ -117,6 +117,11 @@ export function PromptReviewPanel({
                         <span>{String(imagePrompt.index).padStart(2, "0")}</span>
                         <div>
                           <strong>{imagePrompt.title || imagePrompt.role}</strong>
+                          {imagePrompt.information_units && (
+                            <span className={styles.promptDensitySummary}>
+                              {imagePrompt.information_units.length} 个信息单元 · {imagePrompt.visible_text?.length ?? 0} 条画面文案
+                            </span>
+                          )}
                           <p>{imagePrompt.prompt}</p>
                           {imagePrompt.negative_prompt && (
                             <small>避免：{imagePrompt.negative_prompt}</small>

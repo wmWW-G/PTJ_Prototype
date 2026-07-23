@@ -19,12 +19,25 @@ export type LogoPosition =
   | "bottom-right"
   | "center";
 
+/** 服务端登记的自定义职责布局配方 ID；自由文本不能替代该白名单。 */
+export type LayoutRecipeId =
+  | "commercial_overview"
+  | "detail_callouts"
+  | "benefit_evidence"
+  | "variant_matrix"
+  | "craft_options"
+  | "application_matrix"
+  | "quality_proof"
+  | "packaging_trade";
+
 /** 用户从同类预设模板中选中的一条图片职责来源。 */
 export interface CustomVisualRoleSelection {
   /** 后端登记的来源视觉模板 ID。 */
   template_id: string;
   /** 职责在来源模板中的零基下标。 */
   role_index: number;
+  /** 可选服务器布局配方；缺失时兼容 v1 本机模板记录。 */
+  layout_recipe_id?: LayoutRecipeId;
 }
 
 /** 单条生成任务的完整持久化结构。 */
@@ -51,7 +64,7 @@ export interface GenerationTask {
   /** 完整生成几版，不是单版图片张数。 */
   variantCount: number;
   quantity: number;
-  /** 主图参考设计图，只用于构图与风格参考。 */
+  /** 参考设计图适用于全部真实生图类型，只用于构图与风格参考。 */
   styleImages?: string[];
   /** 用户自己的产品素材图，决定商品主体外观。 */
   sourceImages: string[];

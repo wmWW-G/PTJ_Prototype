@@ -12,6 +12,7 @@
 .selectedCopy > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .selectedCopy strong { min-width: 0; color: var(--ink-900); font-size: 12px; }
 .selectedCopy b { flex: none; padding: 3px 6px; border-radius: 999px; color: var(--brand-700); background: var(--brand-50); font-size: 8px; }
+.densityBadge { width: max-content; padding: 3px 6px; border-radius: 999px; color: #9a4f00; background: #fff0d9; font-size: 8px; font-style: normal; font-weight: 800; }
 .selectedCopy span { color: var(--ink-500); font-size: 10px; line-height: 1.45; }
 
 .infoPanel { margin-top: 8px; border: 1px solid #eee6dd; border-radius: 9px; background: #fbfaf8; }
@@ -62,6 +63,10 @@
 .cardPreview i { position: absolute; top: 7px; right: 7px; width: 24px; height: 24px; display: grid; place-items: center; border: 2px solid white; border-radius: 50%; color: white; background: var(--brand-600); }
 .customTemplateCard { border-style: dashed; border-color: #e0ad70; background: #fffaf3; }
 .customTemplateCard:hover { border-style: solid; }
+.personalTemplateCard { border-color: #d8e8d3; background: #fbfff9; }
+.personalTemplatePreview { display: block; }
+.personalTemplatePreview img { width: 100%; height: 100%; object-fit: cover; }
+.personalTemplatePreview i { background: #4b8f3b; }
 .cardPreview .customCardIcon { border-radius: 7px; background: var(--ink-800); }
 .cardSelect > strong { display: block; margin-top: 10px; color: var(--ink-900); font-size: 12px; }
 .cardSelect > span { display: block; min-height: 40px; margin-top: 5px; color: var(--ink-500); font-size: 9px; line-height: 1.45; }
@@ -185,8 +190,8 @@
 .acceptedExtraction { color: #377d27; }
 .acceptedExtraction > span svg { color: #4b9f35; }
 
-.drawer > footer.slotEditorActions { display: grid; grid-template-columns: 1fr 1fr 1.18fr; gap: 14px; padding: 14px 42px 18px; }
-.drawer > footer.slotEditorActions button { width: 100%; height: 48px; border: 1px solid #ddd7d0; color: var(--ink-800); background: white; }
+.drawer > footer.slotEditorActions { display: flex; justify-content: flex-end; padding: 14px 42px 18px; }
+.drawer > footer.slotEditorActions button { width: min(360px, 100%); height: 48px; border: 1px solid #ddd7d0; color: var(--ink-800); background: white; }
 .drawer > footer.slotEditorActions button:hover:not(:disabled) { border-color: var(--brand-500); color: var(--brand-700); background: var(--brand-50); }
 .drawer > footer.slotEditorActions .primarySlotAction { border-color: var(--brand-600); color: white; background: var(--brand-600); }
 .drawer > footer.slotEditorActions .primarySlotAction:hover:not(:disabled) { color: white; background: var(--brand-700); }
@@ -252,7 +257,7 @@
   .aiPromptMeta { align-items: flex-start; flex-wrap: wrap; }
   .aiPromptMeta small { width: 100%; margin-left: 0; }
   .templateExtractionBar { align-items: flex-start; flex-direction: column; padding: 12px 0; }
-  .drawer > footer.slotEditorActions { grid-template-columns: 1fr; gap: 8px; padding: 12px 16px; }
+  .drawer > footer.slotEditorActions { padding: 12px 16px; }
   .drawer > footer.customOverviewFooter { padding-inline: 16px; }
   .drawer > footer.customOverviewFooter button { width: 100%; }
   .selectedTemplate { grid-template-columns: 112px 1fr; }

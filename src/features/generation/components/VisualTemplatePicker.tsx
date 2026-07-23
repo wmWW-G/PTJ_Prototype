@@ -25,13 +25,136 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { assetPath } from "../../../lib/assetPath";
-import type { CustomVisualRoleSelection, ImageType } from "../../tasks/types";
+import type {
+  CustomVisualRoleSelection,
+  ImageType,
+  LayoutRecipeId,
+} from "../../tasks/types";
 import { generateCustomTemplateImage } from "../api";
 import type { VisualTemplateCapability } from "../liveTypes";
+import {
+  listPersonalVisualTemplates,
+  LAYOUT_RECIPE_IDS,
+  savePersonalVisualTemplate,
+  type PersonalVisualTemplate,
+} from "../personalTemplateRepository";
 import styles from "./VisualTemplatePicker.module.css";
+
+/**
+ * 创建高信息量模板共享的真实资料字段，避免套图与详情图的回退契约漂移。
+ *
+ * @param 无。
+ * @returns 所有字段均选填、硬信息提示只填写真实资料的字段定义。
+ * @throws 不主动抛出异常；字段结构错误由 TypeScript 在构建期阻止。
+ */
+function denseProductFields(): VisualTemplateCapability["fields"] {
+  return [
+    { key: "product_name", label: "产品名称", placeholder: "例如：棒球帽", required: false },
+    { key: "core_selling_points", label: "核心卖点", placeholder: "只填真实资料，例如：可调节帽围、透气面料", required: false },
+    { key: "material_craft", label: "材质 / 工艺", placeholder: "只填真实资料，例如：棉质、刺绣", required: false },
+    { key: "colors_variants", label: "颜色 / 款式", placeholder: "只填真实资料，例如：黑色、卡其色、藏蓝色", required: false },
+    { key: "customization_options", label: "定制方向", placeholder: "只填真实资料，例如：Logo 刺绣、吊牌、包装", required: false },
+    { key: "moq", label: "MOQ", placeholder: "只填真实资料；未确认请留空", required: false },
+    { key: "lead_time", label: "交期", placeholder: "只填真实资料；未确认请留空", required: false },
+    { key: "certifications", label: "认证", placeholder: "只填真实资料；未确认请留空", required: false },
+    { key: "packaging_shipping", label: "包装 / 运输", placeholder: "只填真实资料，例如：礼盒、外箱、托盘", required: false },
+    { key: "visible_copy", label: "希望出现的文案", placeholder: "只填写必须准确出现的文字", required: false },
+  ];
+}
+
+/**
+ * 返回与后端固定 high 契约一致的前端回退值。
+ *
+ * @param 无。
+ * @returns 信息单元、辅助视觉、可见标签和画面占比均与服务端一致的 profile。
+ * @throws 不主动抛出异常；数值是服务端登记契约的静态镜像。
+ */
+function highDensityProfile(): NonNullable<VisualTemplateCapability["density_profile"]> {
+  return {
+    level: "high",
+    min_information_units: 9,
+    max_information_units: 12,
+    min_supporting_visuals: 4,
+    min_visible_labels: 5,
+    max_visible_labels: 8,
+    target_occupancy_percent: 80,
+  };
+}
+
+/**
+ * 用户确认的参考图级别最低框架；视觉风格可以变化，信息量不能降低。
+ *
+ * 后端能力暂时不可用时，页面会使用本文件的静态模板。因此这里必须与后端
+ * 同步约束标题、副标题、四个图文模块和五处标签，避免回退模板重新变成纯摄影。
+ */
+const REFERENCE_LEVEL_INFORMATION_FRAME =
+  "必须包含 1 个醒目标题和 1 个解释副标题；主商品或主场景占画面 40%–55%；" +
+  "至少 4 个辅助视觉模块，每个模块必须同时包含图片、短标签和一句解释；" +
+  "至少 5 处可见标签，目标有效内容占比约 80%；禁止纯摄影、大片空白、" +
+  "只有图标没有解释，以及未经确认的数字、认证或交易承诺。";
 
 /** 静态回退模板；后端能力接口暂时不可用时页面仍然完整可操作。 */
 export const DEFAULT_VISUAL_TEMPLATES: Record<string, VisualTemplateCapability> = {
+  dense_product_set: {
+    id: "dense_product_set",
+    image_types: ["set"],
+    name: "高信息量商品套图",
+    category: "高密度信息图",
+    description: "六张商品采购信息图；预览棒球帽图片自带英文仅作版式示例，不可当作商品事实或文案。",
+    art_direction: "面向采购决策的高信息密度商品信息图：每张严格执行服务器构图配方，保留清楚商品身份、真实证据与可读标签，避免编造硬信息。",
+    information_focus: ["采购总览", "结构细节", "卖点证据", "颜色款式", "材质与 Logo 工艺", "包装与合作"],
+    role_highlights: ["商品采购总览", "结构细节拆解", "核心卖点证据", "颜色款式矩阵", "材质与 Logo 工艺", "包装与合作信息"],
+    role_compositions: [
+      "1 个醒目短标题；1 个占画面 45%–55% 的主商品；3–5 个颜色或款式变体；2–3 个基于已确认事实的卖点或交易徽章；有效内容约占画布 80%",
+      "1 个短标题；1 个完整主商品；2–3 个圆形或几何放大特写；1 个辅助角度；3–5 条引线标签；有效内容约占画布 80%",
+      "1 个主商品；3 个真实卖点模块；每个卖点配对应局部证据或使用动作；另配 1–2 个辅助视觉；禁止只有图标没有证据",
+      "1 个主商品；4–6 个颜色、款式或组合变体；2–3 条选择说明；变体整齐但避免无意义重复",
+      "1 个主商品；3–4 个材质或工艺局部样片；每个样片配短标签；未确认的工艺只作中性结构示意",
+      "商品与包装同画面；3 个合作或包装步骤；2–3 个已确认交易信息徽章；未提供 MOQ、交期或认证时留出普通卖点而不编造",
+    ],
+    preview_images: [
+      "demo/templates-v2/high-density/set/01-procurement-overview.jpg",
+      "demo/templates-v2/high-density/set/02-detail-callouts.jpg",
+      "demo/templates-v2/high-density/set/03-benefit-evidence.jpg",
+      "demo/templates-v2/high-density/set/04-variant-matrix.jpg",
+      "demo/templates-v2/high-density/set/05-craft-options.jpg",
+      "demo/templates-v2/high-density/set/06-packaging-trade.jpg",
+    ],
+    fields: denseProductFields(),
+    density_profile: highDensityProfile(),
+  },
+  dense_product_listing: {
+    id: "dense_product_listing",
+    image_types: ["listing"],
+    name: "高信息量采购详情",
+    category: "高密度信息图",
+    description: "八张商品采购详情图；预览棒球帽图片自带英文仅作版式示例，不可当作商品事实或文案。",
+    art_direction: "面向采购决策的高信息密度商品详情图：每张严格执行服务器构图配方，真实资料优先，未确认的 MOQ、交期和认证绝不编造。",
+    information_focus: ["采购总览", "结构细节", "卖点证据", "应用场景", "颜色款式", "材质与 Logo 工艺", "品质信任", "包装与合作"],
+    role_highlights: ["商品采购总览", "结构细节拆解", "核心卖点证据", "应用场景矩阵", "颜色款式矩阵", "材质与 Logo 工艺", "品质与信任证据", "包装与合作信息"],
+    role_compositions: [
+      "1 个醒目短标题；1 个占画面 45%–55% 的主商品；3–5 个颜色或款式变体；2–3 个基于已确认事实的卖点或交易徽章；有效内容约占画布 80%",
+      "1 个短标题；1 个完整主商品；2–3 个圆形或几何放大特写；1 个辅助角度；3–5 条引线标签；有效内容约占画布 80%",
+      "1 个主商品；3 个真实卖点模块；每个卖点配对应局部证据或使用动作；另配 1–2 个辅助视觉；禁止只有图标没有证据",
+      "1 个主商品；2–3 个真实应用场景或采购对象；3 条用途短标签；商品在所有场景中保持同一身份",
+      "1 个主商品；4–6 个颜色、款式或组合变体；2–3 条选择说明；变体整齐但避免无意义重复",
+      "1 个主商品；3–4 个材质或工艺局部样片；每个样片配短标签；未确认的工艺只作中性结构示意",
+      "1 个主商品或成品；3 个来料、过程、成品检查步骤；2 个工具或细节证据；只显示用户确认的认证文字",
+      "商品与包装同画面；3 个合作或包装步骤；2–3 个已确认交易信息徽章；未提供 MOQ、交期或认证时留出普通卖点而不编造",
+    ],
+    preview_images: [
+      "demo/templates-v2/high-density/listing/01-procurement-overview.jpg",
+      "demo/templates-v2/high-density/listing/02-detail-callouts.jpg",
+      "demo/templates-v2/high-density/listing/03-benefit-evidence.jpg",
+      "demo/templates-v2/high-density/listing/04-application-matrix.jpg",
+      "demo/templates-v2/high-density/listing/05-variant-matrix.jpg",
+      "demo/templates-v2/high-density/listing/06-craft-options.jpg",
+      "demo/templates-v2/high-density/listing/07-quality-proof.jpg",
+      "demo/templates-v2/high-density/listing/08-packaging-trade.jpg",
+    ],
+    fields: denseProductFields(),
+    density_profile: highDensityProfile(),
+  },
   standard_product: {
     id: "standard_product",
     image_types: ["main", "set", "poster"],
@@ -42,12 +165,12 @@ export const DEFAULT_VISUAL_TEMPLATES: Record<string, VisualTemplateCapability> 
     information_focus: ["商品主体", "核心卖点", "材质细节", "使用场景"],
     role_highlights: ["商品主视觉", "核心卖点", "细节特写", "使用场景", "功能展示", "组合总览"],
     preview_images: [
-      "demo/generated/mug-front.jpg",
-      "demo/generated/mug-handle.jpg",
-      "demo/generated/mug-rim.jpg",
-      "demo/generated/mug-home.jpg",
-      "demo/generated/mug-office.jpg",
-      "demo/generated/mug-combo.jpg",
+      "demo/templates-v2/product/standard/01-hero.jpg",
+      "demo/templates-v2/product/standard/02-benefits.jpg",
+      "demo/templates-v2/product/standard/03-detail.jpg",
+      "demo/templates-v2/product/standard/04-lifestyle.jpg",
+      "demo/templates-v2/product/standard/05-function.jpg",
+      "demo/templates-v2/product/standard/06-combination.jpg",
     ],
     fields: [
       { key: "product_name", label: "产品名称", placeholder: "例如：防烫陶瓷马克杯", required: false },
@@ -67,12 +190,12 @@ export const DEFAULT_VISUAL_TEMPLATES: Record<string, VisualTemplateCapability> 
     information_focus: ["工厂规模与历史", "OEM/ODM 能力", "质量控制", "交付与服务", "认证与合作背书"],
     role_highlights: ["企业总览", "仓储与交付", "品控流程", "研发与定制", "认证背书", "产能与服务"],
     preview_images: [
-      "demo/generated/ai-supplier-factory.jpg",
-      "demo/generated/ai-supplier-warehouse.jpg",
-      "demo/generated/ai-supplier-quality.jpg",
-      "demo/generated/ai-supplier-design.jpg",
-      "demo/generated/ai-supplier-warehouse.jpg",
-      "demo/generated/ai-supplier-factory.jpg",
+      "demo/templates-v2/supplier-strength/01-company-overview.jpg",
+      "demo/templates-v2/supplier-strength/02-warehouse-delivery.jpg",
+      "demo/templates-v2/supplier-strength/03-quality-process.jpg",
+      "demo/templates-v2/supplier-strength/04-rd-customization.jpg",
+      "demo/templates-v2/supplier-strength/05-quality-system.jpg",
+      "demo/templates-v2/supplier-strength/06-capacity-service.jpg",
     ],
     fields: [
       { key: "company_name", label: "公司名称", placeholder: "例如：Ningbo Example Manufacturing Co., Ltd.", required: false },
@@ -90,17 +213,17 @@ export const DEFAULT_VISUAL_TEMPLATES: Record<string, VisualTemplateCapability> 
     image_types: ["set"],
     name: "极简质感套图",
     category: "极简质感",
-    description: "少文字、强材质和留白，适合强调高级感的商品。",
-    art_direction: "高端编辑式商品摄影，大面积留白、柔和定向光和克制色彩。",
+    description: "以克制配色和精确网格呈现材质、轮廓与卖点，保持完整图文解说密度。",
+    art_direction: "高端编辑式商品信息图，以柔和定向光、精细微距、克制色彩和紧凑模块网格呈现；极简只改变视觉语言，不减少图文信息量。",
     information_focus: ["材质与工艺", "产品轮廓", "品牌语气", "核心价值"],
     role_highlights: ["极简主视觉", "材质微距", "轮廓侧影", "高级场景", "单一卖点", "品牌收束"],
     preview_images: [
-      "demo/generated/mug-front.jpg",
-      "demo/generated/mug-rim.jpg",
-      "demo/generated/mug-handle.jpg",
-      "demo/generated/mug-office.jpg",
-      "demo/generated/mug-home.jpg",
-      "demo/generated/mug-combo.jpg",
+      "demo/templates-v2/product/minimal/01-hero.jpg",
+      "demo/templates-v2/product/minimal/02-material-macro.jpg",
+      "demo/templates-v2/product/minimal/03-silhouette.jpg",
+      "demo/templates-v2/product/minimal/04-premium-scene.jpg",
+      "demo/templates-v2/product/minimal/05-single-benefit.jpg",
+      "demo/templates-v2/product/minimal/06-brand-finale.jpg",
     ],
     fields: [
       { key: "product_name", label: "产品名称", placeholder: "例如：骨瓷咖啡杯", required: false },
@@ -120,12 +243,12 @@ export const DEFAULT_VISUAL_TEMPLATES: Record<string, VisualTemplateCapability> 
     information_focus: ["目标人群", "使用场景", "情绪氛围", "商品带来的变化"],
     role_highlights: ["场景开篇", "人物使用", "关键细节", "功能瞬间", "情绪氛围", "商品收束"],
     preview_images: [
-      "demo/generated/mug-home.jpg",
-      "demo/generated/mug-office.jpg",
-      "demo/generated/mug-front.jpg",
-      "demo/generated/mug-combo.jpg",
-      "demo/generated/mug-handle.jpg",
-      "demo/generated/mug-rim.jpg",
+      "demo/templates-v2/product/lifestyle/01-opening.jpg",
+      "demo/templates-v2/product/lifestyle/02-person-using.jpg",
+      "demo/templates-v2/product/lifestyle/03-key-detail.jpg",
+      "demo/templates-v2/product/lifestyle/04-function-moment.jpg",
+      "demo/templates-v2/product/lifestyle/05-mood.jpg",
+      "demo/templates-v2/product/lifestyle/06-product-finale.jpg",
     ],
     fields: [
       { key: "target_audience", label: "目标人群", placeholder: "例如：城市独居青年", required: false },
@@ -164,14 +287,14 @@ export const DEFAULT_VISUAL_TEMPLATES: Record<string, VisualTemplateCapability> 
       "展示通用包装样式，并用询盘、打样、生产和出运组成合作流程。",
     ],
     preview_images: [
-      "demo/generated/b2b/procurement/01-product-overview.jpg",
-      "demo/generated/b2b/procurement/02-product-introduction.jpg",
-      "demo/generated/b2b/procurement/03-buyer-value.jpg",
-      "demo/generated/b2b/procurement/04-structure-usage.jpg",
-      "demo/generated/b2b/procurement/05-material-craft.jpg",
-      "demo/generated/b2b/procurement/06-application-scenes.jpg",
-      "demo/generated/b2b/procurement/07-quality-process.jpg",
-      "demo/generated/b2b/procurement/08-packaging-cooperation.jpg",
+      "demo/templates-v2/b2b/procurement/01-product-overview.jpg",
+      "demo/templates-v2/b2b/procurement/02-product-introduction.jpg",
+      "demo/templates-v2/b2b/procurement/03-buyer-value.jpg",
+      "demo/templates-v2/b2b/procurement/04-structure-usage.jpg",
+      "demo/templates-v2/b2b/procurement/05-material-craft.jpg",
+      "demo/templates-v2/b2b/procurement/06-application-scenes.jpg",
+      "demo/templates-v2/b2b/procurement/07-quality-process.jpg",
+      "demo/templates-v2/b2b/procurement/08-packaging-cooperation.jpg",
     ],
     fields: [
       { key: "product_name", label: "产品名称", placeholder: "例如：双层防烫陶瓷杯", required: false },
@@ -211,14 +334,14 @@ export const DEFAULT_VISUAL_TEMPLATES: Record<string, VisualTemplateCapability> 
       "以原料、过程、成品、包装和出运检查组成品质与交付协同。",
     ],
     preview_images: [
-      "demo/generated/b2b/oem/01-customization-overview.jpg",
-      "demo/generated/b2b/oem/02-product-development.jpg",
-      "demo/generated/b2b/oem/03-material-color.jpg",
-      "demo/generated/b2b/oem/04-structure-accessories.jpg",
-      "demo/generated/b2b/oem/05-logo-surface-craft.jpg",
-      "demo/generated/b2b/oem/06-packaging-manual.jpg",
-      "demo/generated/b2b/oem/07-sampling-production.jpg",
-      "demo/generated/b2b/oem/08-quality-delivery.jpg",
+      "demo/templates-v2/b2b/oem/01-customization-overview.jpg",
+      "demo/templates-v2/b2b/oem/02-product-development.jpg",
+      "demo/templates-v2/b2b/oem/03-material-color.jpg",
+      "demo/templates-v2/b2b/oem/04-structure-accessories.jpg",
+      "demo/templates-v2/b2b/oem/05-logo-surface-craft.jpg",
+      "demo/templates-v2/b2b/oem/06-packaging-manual.jpg",
+      "demo/templates-v2/b2b/oem/07-sampling-production.jpg",
+      "demo/templates-v2/b2b/oem/08-quality-delivery.jpg",
     ],
     fields: [
       { key: "product_name", label: "产品名称", placeholder: "例如：可定制陶瓷马克杯", required: false },
@@ -258,14 +381,14 @@ export const DEFAULT_VISUAL_TEMPLATES: Record<string, VisualTemplateCapability> 
       "用项目沟通、订单跟进、出运协同和售后响应组成服务闭环。",
     ],
     preview_images: [
-      "demo/generated/b2b/fulfillment/01-factory-team.jpg",
-      "demo/generated/b2b/fulfillment/02-production-craft.jpg",
-      "demo/generated/b2b/fulfillment/03-incoming-inspection.jpg",
-      "demo/generated/b2b/fulfillment/04-process-qc.jpg",
-      "demo/generated/b2b/fulfillment/05-final-inspection.jpg",
-      "demo/generated/b2b/fulfillment/06-testing-capability.jpg",
-      "demo/generated/b2b/fulfillment/07-warehouse-loading.jpg",
-      "demo/generated/b2b/fulfillment/08-project-fulfillment.jpg",
+      "demo/templates-v2/b2b/fulfillment/01-factory-team.jpg",
+      "demo/templates-v2/b2b/fulfillment/02-production-craft.jpg",
+      "demo/templates-v2/b2b/fulfillment/03-incoming-inspection.jpg",
+      "demo/templates-v2/b2b/fulfillment/04-process-qc.jpg",
+      "demo/templates-v2/b2b/fulfillment/05-final-inspection.jpg",
+      "demo/templates-v2/b2b/fulfillment/06-testing-capability.jpg",
+      "demo/templates-v2/b2b/fulfillment/07-warehouse-loading.jpg",
+      "demo/templates-v2/b2b/fulfillment/08-project-fulfillment.jpg",
     ],
     fields: [
       { key: "company_name", label: "公司名称", placeholder: "例如：Ningbo Example Manufacturing Co., Ltd.", required: false },
@@ -276,6 +399,28 @@ export const DEFAULT_VISUAL_TEMPLATES: Record<string, VisualTemplateCapability> 
     ],
   },
 };
+
+/**
+ * 给所有前端回退模板应用统一的参考图级别信息密度。
+ *
+ * @returns 无返回值；函数原地规范化静态模板注册表。
+ * @throws 不主动抛出异常；所有输入来自本文件中的静态登记内容。
+ */
+function applyReferenceLevelDensityToFallbackTemplates(): void {
+  Object.values(DEFAULT_VISUAL_TEMPLATES).forEach((template) => {
+    template.role_compositions = template.role_highlights.map((role, index) => {
+      const specificComposition = template.role_compositions?.[index]
+        ?? "围绕该职责使用独立的信息图骨架，辅助证据不得复制同套其他图片。";
+      return (
+        `${REFERENCE_LEVEL_INFORMATION_FRAME}` +
+        `本图职责“${role}”：${specificComposition}`
+      );
+    });
+    template.density_profile = highDensityProfile();
+  });
+}
+
+applyReferenceLevelDensityToFallbackTemplates();
 
 /** 模板职责库中的一条可选项。 */
 interface CustomRolePoolItem extends CustomVisualRoleSelection {
@@ -375,54 +520,88 @@ interface CustomPreviewSlot {
   title: string;
   originalImage: string;
   candidateImages: string[];
+  /** 本槽位采用候选图后要提交给后端的固定白名单布局配方。 */
+  layoutRecipeId: LayoutRecipeId;
 }
 
 /**
  * 自定义模板的八张演示槽位；套图使用前六张，详情图使用全部八张。
  *
- * 这里复用用户提供的真实参考图作为视觉原型素材，避免用空白占位图冒充 AI 结果。
- * 多个职责可以共用同一张参考图；正式生成时会由后端返回每张独立结果。
+ * 每个槽位使用本项目内通过 ImageGen 生成并逐张验收的独立高信息量示例图。
+ * 候选图也保持相同密度下限，让用户比较版式时不会退回旧的低信息量素材。
  */
 const CUSTOM_PREVIEW_SLOTS: CustomPreviewSlot[] = [
   {
     title: "商品主视觉",
-    originalImage: "demo/custom-template/cap-product-overview.jpg",
-    candidateImages: ["demo/custom-template/cap-logo-crafts.jpg", "demo/custom-template/cap-detail-callouts.jpg"],
+    originalImage: "demo/templates-v2/high-density/listing/01-procurement-overview.jpg",
+    candidateImages: [
+      "demo/templates-v2/high-density/set/01-procurement-overview.jpg",
+      "demo/templates-v2/product/standard/01-hero.jpg",
+    ],
+    layoutRecipeId: "commercial_overview",
   },
   {
     title: "结构细节",
-    originalImage: "demo/custom-template/cap-detail-callouts.jpg",
-    candidateImages: ["demo/custom-template/cap-product-overview.jpg", "demo/custom-template/cap-logo-crafts.jpg"],
+    originalImage: "demo/templates-v2/high-density/listing/02-detail-callouts.jpg",
+    candidateImages: [
+      "demo/templates-v2/high-density/set/02-detail-callouts.jpg",
+      "demo/templates-v2/product/standard/03-detail.jpg",
+    ],
+    layoutRecipeId: "detail_callouts",
   },
   {
     title: "核心卖点",
-    originalImage: "demo/custom-template/cap-logo-crafts.jpg",
-    candidateImages: ["demo/custom-template/cap-product-overview.jpg", "demo/custom-template/cap-detail-callouts.jpg"],
+    originalImage: "demo/templates-v2/high-density/listing/03-benefit-evidence.jpg",
+    candidateImages: [
+      "demo/templates-v2/high-density/set/03-benefit-evidence.jpg",
+      "demo/templates-v2/product/standard/02-benefits.jpg",
+    ],
+    layoutRecipeId: "benefit_evidence",
   },
   {
     title: "Logo 工艺展示",
-    originalImage: "demo/custom-template/cap-product-overview.jpg",
-    candidateImages: ["demo/custom-template/cap-logo-crafts.jpg", "demo/custom-template/cap-detail-callouts.jpg"],
+    originalImage: "demo/templates-v2/high-density/listing/06-craft-options.jpg",
+    candidateImages: [
+      "demo/templates-v2/high-density/set/05-craft-options.jpg",
+      "demo/templates-v2/b2b/oem/05-logo-surface-craft.jpg",
+    ],
+    layoutRecipeId: "craft_options",
   },
   {
     title: "颜色款式",
-    originalImage: "demo/custom-template/cap-product-overview.jpg",
-    candidateImages: ["demo/custom-template/cap-detail-callouts.jpg", "demo/custom-template/cap-logo-crafts.jpg"],
+    originalImage: "demo/templates-v2/high-density/listing/05-variant-matrix.jpg",
+    candidateImages: [
+      "demo/templates-v2/high-density/set/04-variant-matrix.jpg",
+      "demo/templates-v2/product/standard/06-combination.jpg",
+    ],
+    layoutRecipeId: "variant_matrix",
   },
   {
     title: "应用场景",
-    originalImage: "demo/custom-template/cap-detail-callouts.jpg",
-    candidateImages: ["demo/custom-template/cap-product-overview.jpg", "demo/custom-template/cap-logo-crafts.jpg"],
+    originalImage: "demo/templates-v2/high-density/listing/04-application-matrix.jpg",
+    candidateImages: [
+      "demo/templates-v2/product/standard/04-lifestyle.jpg",
+      "demo/templates-v2/product/lifestyle/01-opening.jpg",
+    ],
+    layoutRecipeId: "application_matrix",
   },
   {
     title: "品质背书",
-    originalImage: "demo/custom-template/cap-logo-crafts.jpg",
-    candidateImages: ["demo/custom-template/cap-detail-callouts.jpg", "demo/custom-template/cap-product-overview.jpg"],
+    originalImage: "demo/templates-v2/high-density/listing/07-quality-proof.jpg",
+    candidateImages: [
+      "demo/templates-v2/b2b/procurement/07-quality-process.jpg",
+      "demo/templates-v2/supplier-strength/03-quality-process.jpg",
+    ],
+    layoutRecipeId: "quality_proof",
   },
   {
     title: "包装与合作",
-    originalImage: "demo/custom-template/cap-product-overview.jpg",
-    candidateImages: ["demo/custom-template/cap-logo-crafts.jpg", "demo/custom-template/cap-detail-callouts.jpg"],
+    originalImage: "demo/templates-v2/high-density/listing/08-packaging-trade.jpg",
+    candidateImages: [
+      "demo/templates-v2/high-density/set/06-packaging-trade.jpg",
+      "demo/templates-v2/b2b/procurement/08-packaging-cooperation.jpg",
+    ],
+    layoutRecipeId: "packaging_trade",
   },
 ];
 
@@ -498,6 +677,9 @@ export function VisualTemplatePicker({
   const [customGenerationError, setCustomGenerationError] = useState<string | null>(null);
   const [acceptedSlotIndexes, setAcceptedSlotIndexes] = useState<number[]>([]);
   const [savedSlotIndexes, setSavedSlotIndexes] = useState<number[]>([]);
+  const [personalTemplates, setPersonalTemplates] = useState<PersonalVisualTemplate[]>(
+    () => listPersonalVisualTemplates(),
+  );
   const editInstructionRef = useRef<HTMLInputElement>(null);
   const customReferenceInputRef = useRef<HTMLInputElement>(null);
   const categories = ["推荐", "自定义", ...new Set(templateList.map((item) => item.category))];
@@ -507,6 +689,9 @@ export function VisualTemplatePicker({
       ? []
     : templateList.filter((item) => item.category === category);
   const showCustomCard = category === "推荐" || category === "自定义";
+  const visiblePersonalTemplates = personalTemplates.filter(
+    (template) => template.imageType === templatedImageType,
+  );
   const filledCount = selected.fields.filter((field) => supplementalInfo[field.key]?.trim()).length;
   const detailTemplate = detailTemplateId
     ? templateList.find((template) => template.id === detailTemplateId) ?? null
@@ -541,6 +726,8 @@ export function VisualTemplatePicker({
   /** 打开抽屉时以当前模板为草稿，取消操作不会污染正式选择。 */
   function openDrawer() {
     setDraftValue(selected.id);
+    // 每次打开都重读本机存储，确保刷新页面或其他标签页新保存的模板可见。
+    setPersonalTemplates(listPersonalVisualTemplates());
     setCategory("推荐");
     setDetailTemplateId(null);
     setPreviewRoleIndex(null);
@@ -592,6 +779,30 @@ export function VisualTemplatePicker({
     setIsCustomGenerating(false);
     setAcceptedSlotIndexes([]);
     setSavedSlotIndexes([]);
+  }
+
+  /**
+   * 从“自定义”分类重新打开一条已保存的个人模板。
+   *
+   * @param template 从 LocalStorage 读取且已经过结构校验的个人模板。
+   * @returns 无返回值；界面会恢复整套职责、单图预览和修改要求。
+   * @throws 不抛出异常；传入模板在读取阶段已完成结构校验。
+   */
+  function openPersonalTemplate(template: PersonalVisualTemplate): void {
+    setDraftCustomRoles(template.customRoles.map((role) => ({ ...role })));
+    setDetailTemplateId(null);
+    setPreviewRoleIndex(null);
+    setIsCustomBuilderOpen(true);
+    setCustomEditorSlotIndex(template.slotIndex);
+    setEditInstruction(template.instruction);
+    setCandidateRevisions({});
+    setGeneratedCandidateImages({ [template.slotIndex]: template.previewImageUrl });
+    setCustomReferenceFile(null);
+    setCustomReferencePreviewUrl(null);
+    setCustomGenerationError(null);
+    setIsCustomGenerating(false);
+    setAcceptedSlotIndexes([template.slotIndex]);
+    setSavedSlotIndexes([template.slotIndex]);
   }
 
   /** 只有选满当前类型要求的固定张数后，才提交自定义模板与职责顺序。 */
@@ -713,33 +924,72 @@ export function VisualTemplatePicker({
     if (customReferenceInputRef.current) customReferenceInputRef.current.value = "";
   }
 
-  /** 把键盘焦点放回唯一的自然语言修改框，避免打开额外设置面板。 */
-  function focusEditInstruction() {
-    editInstructionRef.current?.focus();
-  }
-
   /**
-   * 采用当前候选图，并把现有职责顺序提交为自定义模板。
+   * 采用当前候选图，并把当前槽位的固定服务器配方同步到自定义职责。
    *
-   * 这里只保存前端原型状态；结构化视觉配方仍需后续接入真实 AI 提取接口。
+   * 不能在 setState 后立即读取 React state；这里先构造 nextRoles，再把同一
+   * 数组用于 state、父级请求通路和后续保存，保证真实后端一定收到白名单 ID。
    */
   function acceptCustomCandidate() {
     if (customEditorSlotIndex === null || !hasGeneratedActiveCandidate || isCustomGenerating) return;
+    const targetSlotIndex = customEditorSlotIndex;
+    const layoutRecipeId = CUSTOM_PREVIEW_SLOTS[targetSlotIndex % CUSTOM_PREVIEW_SLOTS.length].layoutRecipeId;
+    // 防御性校验让未来维护时无法把自由文本或未登记 ID 送往后端。
+    if (!LAYOUT_RECIPE_IDS.includes(layoutRecipeId)) return;
+    const nextRoles = draftCustomRoles.map((role, index) => (
+      index === targetSlotIndex ? { ...role, layout_recipe_id: layoutRecipeId } : { ...role }
+    ));
+    // 即使职责尚未凑满，也先保存采用操作产生的固定配方，确保后续继续编辑或
+    // 保存个人模板时始终基于同一份 nextRoles，而不是停留在旧 React state。
+    setDraftCustomRoles(nextRoles);
     setAcceptedSlotIndexes((current) => current.includes(customEditorSlotIndex)
       ? current
       : [...current, customEditorSlotIndex]);
-    if (draftCustomRoles.length === requiredRoleCount) {
-      onCustomRolesChange(draftCustomRoles.map((role) => ({ ...role })));
+    if (nextRoles.length === requiredRoleCount) {
+      onCustomRolesChange(nextRoles);
       onChange(customTemplateId);
     }
   }
 
-  /** 将已采用图片标记为已保存个人模板；真实持久化接口将在后续阶段接入。 */
+  /**
+   * 将已采用图片与当前整套职责保存到浏览器本机。
+   *
+   * 只有真实生成且已采用的候选图才可保存。LocalStorage 失败时保持
+   * 按钮可重试，并在页面中显示明确错误，不伪装成已保存。
+   *
+   * @returns 无返回值；成功后同步更新按钮和“自定义”分类列表。
+   * @throws 不向 React 事件边界抛出异常；存储失败会在内部捕获并显示可重试错误。
+   */
   function saveAcceptedSlotAsTemplate() {
     if (customEditorSlotIndex === null || !acceptedSlotIndexes.includes(customEditorSlotIndex)) return;
-    setSavedSlotIndexes((current) => current.includes(customEditorSlotIndex)
-      ? current
-      : [...current, customEditorSlotIndex]);
+    const previewImageUrl = generatedCandidateImages[customEditorSlotIndex];
+    const slotTitle = activeCustomSlot?.title;
+    if (!previewImageUrl || !slotTitle) {
+      setCustomGenerationError("未找到已采用的图片，请重新生成后再保存");
+      return;
+    }
+
+    try {
+      const savedTemplate = savePersonalVisualTemplate({
+        imageType: templatedImageType,
+        slotIndex: customEditorSlotIndex,
+        slotTitle,
+        instruction: editInstruction.trim(),
+        previewImageUrl,
+        customRoles: draftCustomRoles,
+      });
+      setPersonalTemplates((current) => [
+        savedTemplate,
+        ...current.filter((template) => template.id !== savedTemplate.id),
+      ]);
+      setSavedSlotIndexes((current) => current.includes(customEditorSlotIndex)
+        ? current
+        : [...current, customEditorSlotIndex]);
+      setCustomGenerationError(null);
+    } catch (error) {
+      console.error("[批图匠] 个人模板保存失败", error);
+      setCustomGenerationError("模板保存失败，请检查浏览器存储权限后重试");
+    }
   }
 
   /**
@@ -764,12 +1014,16 @@ export function VisualTemplatePicker({
 
       <div className={styles.selectedTemplate}>
         <div className={styles.previewStrip} aria-hidden="true">
-          {selected.preview_images.slice(0, 4).map((image) => (
-            <img key={image} src={assetPath(image)} alt="" />
+          {selected.preview_images.slice(0, 4).map((image, index) => (
+            <img key={`${image}-${index}`} src={assetPath(image)} alt="" />
           ))}
         </div>
         <div className={styles.selectedCopy}>
-          <div><strong>{selected.name}</strong><b>{selected.role_highlights.length} 张 / 版</b></div>
+          <div>
+            <strong>{selected.name}</strong>
+            {selected.density_profile?.level === "high" && <em className={styles.densityBadge}>高信息量</em>}
+            <b>{selected.role_highlights.length} 张 / 版</b>
+          </div>
           <span>{selected.description}</span>
         </div>
       </div>
@@ -1024,9 +1278,11 @@ export function VisualTemplatePicker({
                     <div className={`${styles.templateExtractionBar} ${activeSlotAccepted ? styles.acceptedExtraction : ""}`}>
                       <span>
                         {activeSlotAccepted ? <CircleCheck size={17} /> : <Sparkles size={17} />}
-                        {activeSlotAccepted
-                          ? "已采用；模板特征提取与持久化当前仍为原型状态"
-                          : "先生成并采用图片，再保存为个人模板"}
+                        {activeSlotSaved
+                          ? "已保存到本机；可从“自定义”分类再次打开"
+                          : activeSlotAccepted
+                            ? "已采用；可保存到本机“我的模板”"
+                            : "先生成并采用图片，再保存为个人模板"}
                       </span>
                       <button
                         type="button"
@@ -1039,12 +1295,6 @@ export function VisualTemplatePicker({
                   </div>
 
                   <footer className={styles.slotEditorActions}>
-                    <button type="button" onClick={focusEditInstruction}>继续修改</button>
-                    <button
-                      type="button"
-                      disabled={isCustomGenerating || !editInstruction.trim()}
-                      onClick={() => void regenerateCustomCandidate()}
-                    >再生成一个</button>
                     <button
                       type="button"
                       className={styles.primarySlotAction}
@@ -1062,6 +1312,7 @@ export function VisualTemplatePicker({
                   <div className={styles.detailIntro}>
                     <div>
                       <span>{detailTemplate.category}</span>
+                      {detailTemplate.density_profile?.level === "high" && <em className={styles.densityBadge}>高信息量</em>}
                       <b>共 {detailTemplate.role_highlights.length} 张详情图</b>
                     </div>
                     <p>{detailTemplate.description}</p>
@@ -1141,8 +1392,8 @@ export function VisualTemplatePicker({
                           onClick={() => setDraftValue(item.id)}
                         >
                           <div className={styles.cardPreview}>
-                            {item.preview_images.slice(0, 4).map((image) => (
-                              <img key={image} src={assetPath(image)} alt="" />
+                            {item.preview_images.slice(0, 4).map((image, index) => (
+                              <img key={`${image}-${index}`} src={assetPath(image)} alt="" />
                             ))}
                             {active && <i><Check size={14} /></i>}
                           </div>
@@ -1153,6 +1404,7 @@ export function VisualTemplatePicker({
                               {item.information_focus.map((focus) => <li key={focus}>{focus}</li>)}
                             </ul>
                           )}
+                          {item.density_profile?.level === "high" && <em className={styles.densityBadge}>高信息量</em>}
                           <b className={styles.cardCount}>{item.role_highlights.length} 张 / 版</b>
                         </button>
                         <button
@@ -1171,6 +1423,31 @@ export function VisualTemplatePicker({
                       </article>
                     );
                   })}
+                  {category === "自定义" && visiblePersonalTemplates.map((template) => (
+                    <article
+                      key={template.id}
+                      className={`${styles.templateCard} ${styles.personalTemplateCard}`}
+                      aria-label={`我的模板：${template.slotTitle}`}
+                    >
+                      <button
+                        type="button"
+                        className={styles.cardSelect}
+                        aria-label={`打开我的模板：${template.slotTitle}`}
+                        onClick={() => openPersonalTemplate(template)}
+                      >
+                        <div className={`${styles.cardPreview} ${styles.personalTemplatePreview}`}>
+                          <img
+                            src={resolveCustomImageSource(template.previewImageUrl)}
+                            alt={`${template.slotTitle}模板预览`}
+                          />
+                          <i><Bookmark size={14} /></i>
+                        </div>
+                        <strong>{template.slotTitle}</strong>
+                        <span>{template.instruction}</span>
+                        <b className={styles.cardCount}>我的模板 · 第 {template.slotIndex + 1} 张</b>
+                      </button>
+                    </article>
+                  ))}
                   {showCustomCard && (
                     <article className={`${styles.templateCard} ${styles.customTemplateCard}`}>
                       <button

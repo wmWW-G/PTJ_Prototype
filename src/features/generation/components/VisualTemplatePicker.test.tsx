@@ -40,6 +40,36 @@ function ControlledPicker() {
 describe("VisualTemplatePicker", () => {
   beforeEach(() => {
     generateCustomTemplateImageMock.mockReset();
+    localStorage.clear();
+  });
+
+  it("所有静态模板都保持参考图级别的图文解说密度", () => {
+    const allPreviewImages = Object.values(DEFAULT_VISUAL_TEMPLATES)
+      .flatMap((template) => template.preview_images);
+    expect(allPreviewImages).toHaveLength(62);
+    expect(new Set(allPreviewImages)).toHaveLength(62);
+
+    for (const template of Object.values(DEFAULT_VISUAL_TEMPLATES)) {
+      const visualDirection = `${template.description}${template.art_direction}`;
+      expect(visualDirection).not.toContain("少文字");
+      expect(visualDirection).not.toContain("大面积留白");
+      expect(template.density_profile).toEqual({
+        level: "high",
+        min_information_units: 9,
+        max_information_units: 12,
+        min_supporting_visuals: 4,
+        min_visible_labels: 5,
+        max_visible_labels: 8,
+        target_occupancy_percent: 80,
+      });
+      expect(template.role_compositions).toHaveLength(template.role_highlights.length);
+      template.role_compositions?.forEach((composition) => {
+        expect(composition).toContain("醒目标题");
+        expect(composition).toContain("解释副标题");
+        expect(composition).toContain("至少 4 个");
+        expect(composition).toContain("一句解释");
+      });
+    }
   });
 
   it("通过右侧抽屉切换模板并显示该模板的预期结构", async () => {
@@ -57,6 +87,44 @@ describe("VisualTemplatePicker", () => {
 
     expect(screen.queryByRole("dialog", { name: "选择生图模板" })).not.toBeInTheDocument();
     expect(screen.getByText("企业实力套图")).toBeInTheDocument();
+  });
+
+  it("所有模板卡都显示高信息量标签，视觉风格不再降低信息密度", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<ControlledPicker />);
+
+    await user.click(screen.getByRole("button", { name: "更换模板" }));
+    const denseCard = screen.getByRole("button", { name: "选择高信息量商品套图" });
+
+    expect(within(denseCard).getByText("高信息量")).toBeInTheDocument();
+    expect(denseCard.querySelectorAll("img")[0]).toHaveAttribute(
+      "src",
+      expect.stringContaining("templates-v2/high-density/set/01-procurement-overview.jpg"),
+    );
+    expect(denseCard.querySelectorAll("img")[1]).toHaveAttribute(
+      "src",
+      expect.stringContaining("templates-v2/high-density/set/02-detail-callouts.jpg"),
+    );
+    expect(container.querySelectorAll("img")).not.toHaveLength(0);
+
+    const minimalCard = screen.getByRole("button", { name: "选择极简质感套图" });
+    expect(within(minimalCard).getByText("高信息量")).toBeInTheDocument();
+  });
+
+  it("高密度与极简详情都显示统一的信息量底线", async () => {
+    const user = userEvent.setup();
+    render(<ControlledPicker />);
+
+    await user.click(screen.getByRole("button", { name: "更换模板" }));
+    await user.click(screen.getByRole("button", { name: "查看高信息量商品套图详情" }));
+    expect(screen.getByRole("heading", { name: "高信息量商品套图详情" })).toBeInTheDocument();
+    let dialog = screen.getByRole("dialog", { name: "选择生图模板" });
+    expect(within(dialog).getByText("高信息量")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "返回模板列表" }));
+    await user.click(screen.getByRole("button", { name: "查看极简质感套图详情" }));
+    dialog = screen.getByRole("dialog", { name: "选择生图模板" });
+    expect(within(dialog).getByText("高信息量")).toBeInTheDocument();
   });
 
   it("每张模板卡都提供独立详情入口，并可从详情直接使用模板", async () => {
@@ -166,10 +234,24 @@ describe("VisualTemplatePicker", () => {
     expect(screen.getByText("工厂履约详情")).toBeInTheDocument();
   });
 
-  it("套图通过大抽屉完成单图 AI 修改、采用与保存模板", async () => {
+  it("自定义单图编辑底部只保留采用动作", async () => {
+    const user = userEvent.setup();
+    render(<ControlledPicker />);
+
+    await user.click(screen.getByRole("button", { name: "更换模板" }));
+    await user.click(screen.getByRole("button", { name: "配置自定义套图" }));
+    const dialog = screen.getByRole("dialog", { name: "选择生图模板" });
+    await user.click(within(dialog).getByRole("button", { name: "修改第 1 张：商品主视觉" }));
+
+    expect(within(dialog).queryByRole("button", { name: "继续修改" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "再生成一个" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "采用这张" })).toBeInTheDocument();
+  });
+
+  it("采用单图后持久化个人模板，刷新后仍可从自定义分类打开", async () => {
     const user = userEvent.setup();
     generateCustomTemplateImageMock.mockResolvedValueOnce("https://images.example.com/generated-slot-4.png");
-    render(<ControlledPicker />);
+    const { unmount } = render(<ControlledPicker />);
 
     await user.click(screen.getByRole("button", { name: "更换模板" }));
     expect(screen.getByRole("button", { name: "配置自定义套图" })).toBeInTheDocument();
@@ -191,11 +273,27 @@ describe("VisualTemplatePicker", () => {
     await user.click(within(dialog).getByRole("button", { name: "重新生成" }));
     expect(await within(dialog).findByText("GPT-Image-2 已生成新版本")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "采用这张" }));
-    expect(within(dialog).getByText("已采用；模板特征提取与持久化当前仍为原型状态")).toBeInTheDocument();
+    expect(within(dialog).getByText("已采用；可保存到本机“我的模板”")).toBeInTheDocument();
     const saveButton = within(dialog).getByRole("button", { name: "保存为我的模板" });
     expect(saveButton).toBeEnabled();
     await user.click(saveButton);
     expect(within(dialog).getByRole("button", { name: "已保存到我的模板" })).toBeDisabled();
+    expect(within(dialog).getByText("已保存到本机；可从“自定义”分类再次打开")).toBeInTheDocument();
+
+    const storedTemplates = JSON.parse(
+      localStorage.getItem("ptj.prototype.personal-templates.v1") ?? "[]",
+    ) as unknown[];
+    expect(storedTemplates).toHaveLength(1);
+    expect(storedTemplates[0]).toMatchObject({
+      imageType: "set",
+      slotIndex: 3,
+      slotTitle: "Logo 工艺展示",
+      instruction: "增加四种 Logo 工艺展示，整体更专业，文案由 AI 生成",
+      previewImageUrl: "https://images.example.com/generated-slot-4.png",
+      customRoles: expect.arrayContaining([
+        expect.objectContaining({ layout_recipe_id: "craft_options" }),
+      ]),
+    });
 
     await user.click(within(dialog).getByRole("button", { name: "返回整套" }));
     expect(within(dialog).getByText("已采用 AI 新版本")).toBeInTheDocument();
@@ -203,6 +301,79 @@ describe("VisualTemplatePicker", () => {
     expect(screen.queryByRole("dialog", { name: "选择生图模板" })).not.toBeInTheDocument();
     expect(screen.getByText("自定义套图")).toBeInTheDocument();
     expect(screen.getByText("6 张 / 版")).toBeInTheDocument();
+
+    // 重新挂载组件模拟刷新页面，确认模板不是只保存在 React 内存中。
+    unmount();
+    render(<ControlledPicker />);
+    await user.click(screen.getByRole("button", { name: "更换模板" }));
+    await user.click(screen.getByRole("button", { name: "自定义" }));
+    const savedTemplateCard = screen.getByRole("article", { name: "我的模板：Logo 工艺展示" });
+    expect(within(savedTemplateCard).getByAltText("Logo 工艺展示模板预览")).toHaveAttribute(
+      "src",
+      "https://images.example.com/generated-slot-4.png",
+    );
+    await user.click(within(savedTemplateCard).getByRole("button", { name: "打开我的模板：Logo 工艺展示" }));
+    const reopenedDialog = screen.getByRole("dialog", { name: "选择生图模板" });
+    expect(within(reopenedDialog).getByRole("heading", { name: "第 4 张 · Logo 工艺展示" })).toBeInTheDocument();
+    expect(within(reopenedDialog).getByLabelText("告诉 AI 怎么修改这一张")).toHaveValue(
+      "增加四种 Logo 工艺展示，整体更专业，文案由 AI 生成",
+    );
+  });
+
+  it("采用结构细节候选图后保存并重开，向外提交固定 detail_callouts 配方", async () => {
+    const user = userEvent.setup();
+    const onCustomRolesChange = vi.fn();
+    generateCustomTemplateImageMock.mockResolvedValueOnce("https://images.example.com/generated-detail.png");
+    const { unmount } = render(
+      <VisualTemplatePicker
+        imageType="set"
+        value="standard_product"
+        customRoles={[]}
+        supplementalInfo={{}}
+        templates={DEFAULT_VISUAL_TEMPLATES}
+        onChange={vi.fn()}
+        onCustomRolesChange={onCustomRolesChange}
+        onInfoChange={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "更换模板" }));
+    await user.click(screen.getByRole("button", { name: "配置自定义套图" }));
+    const dialog = screen.getByRole("dialog", { name: "选择生图模板" });
+    await user.click(within(dialog).getByRole("button", { name: "修改第 2 张：结构细节" }));
+    await user.click(within(dialog).getByRole("button", { name: "重新生成" }));
+    await user.click(await within(dialog).findByRole("button", { name: "采用这张" }));
+    await user.click(within(dialog).getByRole("button", { name: "保存为我的模板" }));
+
+    const stored = JSON.parse(localStorage.getItem("ptj.prototype.personal-templates.v1") ?? "[]") as Array<{ customRoles: Array<{ layout_recipe_id?: string }> }>;
+    expect(stored[0]?.customRoles[1]?.layout_recipe_id).toBe("detail_callouts");
+
+    // 重新挂载后只能从 LocalStorage 读取职责，借此验证并非沿用当前 React 内存。
+    // 清空首次“采用”的记录，确保下方断言只能由重开后的“使用这套模板”触发。
+    onCustomRolesChange.mockClear();
+    unmount();
+    render(
+      <VisualTemplatePicker
+        imageType="set"
+        value="standard_product"
+        customRoles={[]}
+        supplementalInfo={{}}
+        templates={DEFAULT_VISUAL_TEMPLATES}
+        onChange={vi.fn()}
+        onCustomRolesChange={onCustomRolesChange}
+        onInfoChange={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "更换模板" }));
+    await user.click(screen.getByRole("button", { name: "自定义" }));
+    const savedTemplate = screen.getByRole("article", { name: "我的模板：结构细节" });
+    await user.click(within(savedTemplate).getByRole("button", { name: "打开我的模板：结构细节" }));
+    const reopenedDialog = screen.getByRole("dialog", { name: "选择生图模板" });
+    await user.click(within(reopenedDialog).getByRole("button", { name: "返回整套" }));
+    await user.click(within(reopenedDialog).getByRole("button", { name: "使用这套模板" }));
+    expect(onCustomRolesChange).toHaveBeenCalledTimes(1);
+    const reloadedRoles = onCustomRolesChange.mock.calls[0]?.[0];
+    expect(reloadedRoles?.[1]?.layout_recipe_id).toBe("detail_callouts");
   });
 
   it("详情图自定义入口保持 8 个可独立修改的图片槽位", async () => {
@@ -280,7 +451,7 @@ describe("VisualTemplatePicker", () => {
     expect(within(dialog).getByText("原图")).toBeInTheDocument();
     expect(within(dialog).getByAltText("修改前的原图")).toHaveAttribute(
       "src",
-      expect.stringContaining("cap-product-overview.jpg"),
+      expect.stringContaining("templates-v2/high-density/listing/01-procurement-overview.jpg"),
     );
     expect(within(dialog).getByText("牛1.jpg")).toBeInTheDocument();
   });

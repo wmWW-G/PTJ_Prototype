@@ -97,7 +97,9 @@ job_started → plan_ready（回显已确认计划）→ variant_started
 
 套图和详情图都支持“自定义模板”，但它不是任意 Prompt 编辑器。前端只允许从当前类型已登记的职责库中选择、替换和排序：套图固定 6 项，详情图固定 8 项；选择顺序直接对应最终第 1–6 / 1–8 张图片。请求使用 `visual_template_id=custom_set` 或 `custom_listing`，并通过 `custom_visual_roles` 仅提交来源 `template_id` 和零基 `role_index`。后端必须重新从 `VISUAL_TEMPLATES` 恢复职责标题、构图、预览和字段，并校验固定数量、重复项、下标与 `image_types`；禁止跨类型混用，也禁止前端直接提交自定义构图文字。
 
-三套详情模板的 24 张原创 ImageGen 预览位于 `public/demo/generated/b2b/{procurement,oem,fulfillment}/`，每套 8 张、每个职责独立一张。新增或调整职责时必须同步替换对应素材、前端静态回退和后端模板注册，不能复用无关占位图。
+自定义模板的单图编辑在“生成 → 采用这张 → 保存为我的模板”后，会把已采用图片 URL、修改指令、槽位和整套职责顺序保存到浏览器 LocalStorage 的 `ptj.prototype.personal-templates.v1`。用户刷新页面后可从模板抽屉的“自定义”分类重新打开。这是当前原型的本机持久化，不会同步到用户账号或其他设备；真实生图仍只提交服务器可验证的 `custom_visual_roles`。
+
+九套视觉模板的 62 张原创 ImageGen 预览统一位于 `public/demo/templates-v2/`，每个职责使用路径和内容均独立的一张图。预览最低结构为“醒目标题 + 解释副标题 + 主商品或主场景 + 至少 4 个带图片、短标签和一句解释的辅助模块”；提示词与参考图登记保存在同目录的三份 `manifest-*.json`。新增或调整职责时必须同步替换对应素材、前端静态回退和后端模板注册，不能复用无关占位图。
 
 OpenRouter GPT-Image-2 当前最多三路并发，剩余槽位等待前一批完成，避免一版套图的副图同时冲击 Key 额度和上游路由。429 必须优先遵守 OpenRouter `Retry-After`，再叠加错峰延迟；不要提高并发，除非已通过当前 Key 的真实批量测试确认容量。
 
@@ -107,7 +109,7 @@ Google 比例必须按模型区分：Nano Banana 2（`gemini-3.1-flash-image`）
 
 旧历史任务里的 `gpt_image_2_azure` 只作为兼容输入读取，并立即迁移成 `gpt_image_2_openrouter`；它不是可调用的供应商或配置入口。
 
-企业实力模板的预览素材位于 `public/demo/generated/ai-supplier-*.jpg`，均为项目内通过 ImageGen 生成的原创演示图。不要重新使用用户提供的其他店铺截图或从截图裁切素材。
+企业实力模板的六张预览位于 `public/demo/templates-v2/supplier-strength/`，均为项目内通过 ImageGen 生成并按统一图文密度验收的原创演示图。不要重新使用用户提供的其他店铺截图或从截图裁切素材。
 
 企业实力文生套图使用 `generated_anchor_strategy="independent"`：图 1 仍先生成并正常返回，但图 2–6 不得把这张已排版的“企业总览”当图生图参考，应独立文生图。六张的商品身份、配色和品牌气质保持一致，但必须按 `role_compositions` 使用不同的版式骨架。有图模式仍共享用户上传的原始商品图，不受这条规则影响。
 
@@ -142,3 +144,13 @@ npm run build
 ```
 
 真实收费 Smoke Test 入口在 `backend/smoke.py`，必须显式指定 `--model`。
+
+## 2026-07-23：高信息密度商品信息图契约
+
+- 九套视觉模板全部使用 `density_profile.level="high"`：每张图片必须规划 9–12 个 `information_units`、至少 4 个辅助视觉、5–8 条画面文案，目标有效画面占比为 80%。每张必须同时包含醒目标题、解释副标题，以及至少 4 个“图片 + 短标签 + 一句解释”模块；极简和生活方式只改变视觉语言，不能降低信息量。Planner 和确认后的执行入口都会拒绝不达阈值的计划，编排器还会把同一最低框架直接写入图片模型最终 Prompt，并在 `plan_ready` 中展示给用户审核。
+- `information_units` 是 Planner 为单张图片声明的可视信息或证据模块，类型包括主商品、辅助视觉、细节引线、标签、徽章、变体和流程步骤；Prompt 审核只显示数量摘要，不向用户展开内部 source。
+- 允许的 `layout_recipe_id` 仅有 8 个服务器登记 ID：`commercial_overview`、`detail_callouts`、`benefit_evidence`、`variant_matrix`、`craft_options`、`application_matrix`、`quality_proof`、`packaging_trade`。个人模板只保存这些 ID；未知 ID 会在本机读取/保存阶段过滤或拒绝，后端也会再次校验。自然语言编辑框只用于单图 AI 修改，绝不能作为后端布局配方。
+- 硬信息边界：MOQ、交期、认证、数值和客户名称必须逐字来自 `verified_supplemental_info`；安全描述标签只能来自用户事实、`ProductContext` 或可观察视觉证据，不能把推测包装为硬信息。
+- 全部真实生图类型（主图、套图、详情图、海报）都可上传最多 1 张 `style_reference_assets`。它只学习整套信息结构、构图和视觉风格，永远不进入商品分析；商品素材只进入 `reference_assets`，两组数组不得串位。仅有风格图时也必须按图生图提交。
+- 个人模板在采用候选图时会把对应固定 `layout_recipe_id` 写入 `custom_visual_roles`，保存到 LocalStorage 后，重新从“自定义”分类打开并使用时仍会把相同 ID 回传到生成请求。
+- 当前精确叠字尚未完成：图片中的文字仍由图片模型生成，不能承诺准确文字、数字、认证或排版；精确可控叠字属于后续阶段。

@@ -20,6 +20,22 @@ from backend.orchestrator import GenerationOrchestrator
 from backend.templates import TemplateDefinition
 
 
+def _high_information_units() -> list[dict[str, str]]:
+    """创建满足参考图级别 high 契约的九条可视信息模块。"""
+
+    return [
+        {"kind": "hero", "content": "完整商品主体", "source": "visual_evidence"},
+        {"kind": "detail_callout", "content": "帽檐走线特写", "source": "visual_evidence"},
+        {"kind": "detail_callout", "content": "调节扣特写", "source": "visual_evidence"},
+        {"kind": "supporting_visual", "content": "侧面辅助角度", "source": "layout_instruction"},
+        {"kind": "variant", "content": "颜色变体矩阵", "source": "layout_instruction"},
+        {"kind": "label", "content": "透气面料", "source": "verified_input"},
+        {"kind": "label", "content": "可调节帽围", "source": "verified_input"},
+        {"kind": "label", "content": "弯曲帽檐", "source": "visual_evidence"},
+        {"kind": "badge", "content": "支持 Logo 定制", "source": "verified_input"},
+    ]
+
+
 class FakePlanner:
     """按模板槽位生成稳定 Prompt 的 Planner 替身。"""
 
@@ -204,6 +220,14 @@ async def test_confirmed_plans_skip_planner_and_drive_image_generation() -> None
                         "role": "hero",
                         "title": "商品主视觉",
                         "prompt": "这是用户确认后的最终生图 Prompt",
+                        "visible_text": [
+                            "透气面料",
+                            "可调节帽围",
+                            "弯曲帽檐",
+                            "金属调节扣",
+                            "颜色选择",
+                        ],
+                        "information_units": _high_information_units(),
                     }
                 ],
             )
@@ -217,6 +241,93 @@ async def test_confirmed_plans_skip_planner_and_drive_image_generation() -> None
     assert len(provider.calls) == 1
     assert "这是用户确认后的最终生图 Prompt" in provider.calls[0].prompt
     assert any(event.type == "anchor_completed" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_confirmed_high_density_plan_reaches_provider_with_visible_contract() -> None:
+    """合法 high 计划必须把结构化信息与画面文案写入实际图片模型 Prompt。"""
+
+    provider = FakeProvider()
+    request = GenerationRequest(
+        image_type="set",
+        template_id="product_set_01",
+        visual_template_id="dense_product_set",
+        model="nano_banana_2",
+        aspect_ratio="1:1",
+        resolution="2K",
+        user_requirement="生成高信息量棒球帽套图",
+        confirmed_plans=[
+            PromptPlan(
+                global_consistency_prompt="保持商品一致",
+                image_prompts=[
+                    {
+                        "index": index,
+                        "role": f"role-{index}",
+                        "prompt": f"生成第 {index} 张",
+                        "visible_text": [
+                            "透气面料",
+                            "可调节帽围",
+                            "弯曲帽檐",
+                            "金属调节扣",
+                            "颜色选择",
+                        ],
+                        "information_units": _high_information_units(),
+                    }
+                    for index in range(1, 7)
+                ],
+            )
+        ],
+    )
+
+    events = [event async for event in _orchestrator(provider).stream(request)]
+
+    assert len(provider.calls) == 6
+    assert "内部构图类型=detail_callout（类型名不得作为画面文字）" in provider.calls[0].prompt
+    assert "帽檐走线特写" in provider.calls[0].prompt
+    assert "透气面料" in provider.calls[0].prompt
+    assert "内部构图信息单元（类型名不得作为画面可见文本）" in provider.calls[0].prompt
+    assert "仅尝试呈现以下已确认文案，不得添加其他硬信息，优先保持清晰可读" in provider.calls[0].prompt
+    # 即使用户提交的是已确认计划，实际图片模型也必须收到统一的参考图级
+    # 图文框架，不能只靠 Planner 曾经把规则写进单张 prompt。
+    assert "至少 4 个辅助视觉模块" in provider.calls[0].prompt
+    assert "每个模块必须同时包含图片、短标签和一句解释" in provider.calls[0].prompt
+    assert "目标有效内容占比约 80%" in provider.calls[0].prompt
+    plan_event = next(event for event in events if event.type == "plan_ready")
+    visible_global_prompt = plan_event.data["plan"]["global_consistency_prompt"]
+    assert "至少 4 个辅助视觉模块" in visible_global_prompt
+    assert "不承诺精确叠字或字符准确率" not in provider.calls[0].prompt
+    assert any(event.type == "job_completed" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_confirmed_high_density_plan_is_rejected_before_provider_when_contract_is_broken() -> None:
+    """用户确认或单图优化后删掉高密度信息时，后端必须在生图前阻断。"""
+
+    provider = FakeProvider()
+    request = GenerationRequest(
+        image_type="set",
+        template_id="product_set_01",
+        visual_template_id="dense_product_set",
+        model="nano_banana_2",
+        aspect_ratio="1:1",
+        resolution="2K",
+        user_requirement="提交不完整高密度套图",
+        confirmed_plans=[
+            PromptPlan(
+                global_consistency_prompt="保持商品一致",
+                image_prompts=[
+                    {"index": index, "role": f"role-{index}", "prompt": f"生成第 {index} 张"}
+                    for index in range(1, 7)
+                ],
+            )
+        ],
+    )
+
+    events = [event async for event in _orchestrator(provider).stream(request)]
+
+    assert provider.calls == []
+    assert events[-1].type == "job_failed"
+    assert "高信息密度" in (events[-1].message or "")
 
 
 @pytest.mark.asyncio
@@ -430,6 +541,38 @@ async def test_custom_set_preserves_user_selected_role_order() -> None:
         "认证背书",
         "组合总览",
     ]
+    assert any(event.type == "job_completed" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_custom_set_passes_registered_recipe_and_high_density_to_planner() -> None:
+    """选中白名单构图配方后，Planner 必须收到配方文本和高密度契约。"""
+
+    provider = FakeProvider()
+    planner = FakePlanner()
+    request = GenerationRequest(
+        image_type="set",
+        template_id="product_set_01",
+        visual_template_id="custom_set",
+        custom_visual_roles=[
+            {
+                "template_id": "standard_product",
+                "role_index": index,
+                "layout_recipe_id": "detail_callouts" if index == 0 else None,
+            }
+            for index in range(6)
+        ],
+        model="nano_banana_2",
+        aspect_ratio="1:1",
+        resolution="2K",
+        user_requirement="生成含细节引线标签的六张高密度商品套图",
+    )
+
+    events = [event async for event in _orchestrator(provider, planner).stream(request)]
+
+    assert planner.last_visual_template is not None
+    assert "2–3 个圆形或几何放大特写" in planner.last_visual_template.role_compositions[0]
+    assert planner.last_visual_template.density_profile.level == "high"
     assert any(event.type == "job_completed" for event in events)
 
 

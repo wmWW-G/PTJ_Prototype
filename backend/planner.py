@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Protocol, Sequence
+from typing import Any, Protocol, Sequence, get_args
 
 from pydantic import ValidationError
 
 from .domain import (
     BinaryAsset,
+    InformationDensityProfile,
+    InformationUnitKind,
+    InformationUnitSource,
     ImageModel,
     ImagePrompt,
     ProductContext,
@@ -17,6 +20,69 @@ from .domain import (
     TemplateDefinition,
     VisualTemplateDefinition,
 )
+
+
+def _information_unit_schema() -> list[dict[str, object]]:
+    """返回直接给文本模型使用的信息单元枚举 schema。
+
+    Args:
+        无。
+
+    Returns:
+        包含 domain Literal 全部合法 snake_case 值的单项数组 schema。
+
+    Raises:
+        不主动抛出异常。
+    """
+
+    return [{
+        "kind": {"type": "string", "enum": list(get_args(InformationUnitKind))},
+        "content": "string",
+        "source": {"type": "string", "enum": list(get_args(InformationUnitSource))},
+    }]
+
+
+# 这些类型代表能为主商品提供额外可观察信息的单元；标题、普通标签与徽章
+# 本身不算辅助视觉，避免模型用纯文字凑出看似很高的信息密度。
+SUPPORTING_INFORMATION_KINDS = {
+    "supporting_visual",
+    "detail_callout",
+    "variant",
+    "process_step",
+}
+
+
+def _meets_density_contract(
+    image_prompt: ImagePrompt,
+    profile: InformationDensityProfile,
+) -> bool:
+    """判断单张计划是否满足模板的可机器校验信息密度。
+
+    Args:
+        image_prompt: 模型规划出的单张图片 Prompt 和信息单元。
+        profile: 当前视觉模板声明的信息密度阈值。
+
+    Returns:
+        minimal 或 balanced 模板始终返回 ``True``；high 模板仅在信息单元、
+        辅助视觉和可见标签都落在规定范围内时返回 ``True``。
+
+    Raises:
+        不主动抛出异常。
+    """
+
+    if profile.level != "high":
+        return True
+    unit_count = len(image_prompt.information_units)
+    supporting_count = sum(
+        unit.kind in SUPPORTING_INFORMATION_KINDS
+        for unit in image_prompt.information_units
+    )
+    label_count = len(image_prompt.visible_text)
+    return (
+        profile.min_information_units <= unit_count <= profile.max_information_units
+        and supporting_count >= profile.min_supporting_visuals
+        and profile.min_visible_labels <= label_count <= profile.max_visible_labels
+    )
 
 
 class GenerateContentClient(Protocol):
@@ -232,6 +298,13 @@ class PromptPlanner:
         role_compositions = (
             visual_template.role_compositions if visual_template is not None else []
         )
+        # 未选择视觉模板的旧客户端沿用 balanced 默认值，只有明确 high 的模板
+        # 才触发严格数量校验，避免把历史计划误判为不可执行。
+        density_profile = (
+            visual_template.density_profile
+            if visual_template is not None
+            else InformationDensityProfile()
+        )
         # 把视觉模板的职责逐张绑定到固定槽位。结构模板仍决定数量和稳定 role，
         # 但“企业实力”等视觉模板可以覆盖标准套图的默认业务主题。
         slot_visual_directions = [
@@ -259,11 +332,14 @@ class PromptPlanner:
                 "严格按 slots 顺序和数量输出 image_prompts",
                 "保持商品外观、颜色、材质、Logo 和结构一致",
                 "不得虚构参数、认证、销量、产能、客户或测试结果",
-                "可见文字只能来自用户明确提供的内容",
+                "硬信息逐字来自 verified_supplemental_info；未填写的 MOQ、交期、认证、数值和客户名称不得补写",
+                "描述标签只能来自用户事实、ProductContext 或视觉证据；不能把推测包装成硬信息",
                 "每个 prompt 必须独立完整，并包含全局一致性要求",
                 "每张图必须严格覆盖 slot_visual_directions 中对应的 title，且同一版内各张主题不得重复",
                 "slot_visual_directions 的 title 优先于 template.slots 的默认主题，但不得改变 index 和 role",
                 "每个 prompt 必须严格执行对应的 required_composition，不得改用其他槽位的版式",
+                "单一版式骨架允许多个证据单元；不得把“一种主要结构”解释成一个卖点",
+                "information_units 不是记账字段；prompt 必须逐条落实每个 unit 的可视位置/证据，visible_text 与 units 同步",
                 "全局一致性只约束商品身份、配色和品牌气质，不得要求全部图片复用同一构图、网格、图标、背景或信息块",
                 "缺少企业事实时使用不含数字、认证、品牌和客户名称的通用流程画面，不得编造背书",
             ],
@@ -277,6 +353,7 @@ class PromptPlanner:
             "visual_template": (
                 visual_template.model_dump() if visual_template is not None else {}
             ),
+            "density_contract": density_profile.model_dump(),
             "verified_supplemental_info": verified_info,
             "output_schema": {
                 "global_consistency_prompt": "string",
@@ -288,6 +365,7 @@ class PromptPlanner:
                         "prompt": "string",
                         "negative_prompt": "string",
                         "visible_text": ["string"],
+                        "information_units": _information_unit_schema(),
                     }
                 ],
             },
@@ -296,7 +374,12 @@ class PromptPlanner:
         for attempt in range(2):
             if attempt:
                 base_instruction["repair"] = (
-                    f"上次结构错误。必须恰好输出 {len(template.slots)} 条，索引从 1 连续递增。"
+                    f"上次结构或密度错误。必须恰好输出 {len(template.slots)} 条，索引从 1 连续递增。"
+                    f"当前密度阈值：信息单元 {density_profile.min_information_units}–"
+                    f"{density_profile.max_information_units} 个，至少 "
+                    f"{density_profile.min_supporting_visuals} 个辅助视觉，"
+                    f"可见标签 {density_profile.min_visible_labels}–"
+                    f"{density_profile.max_visible_labels} 项。"
                 )
             response = await self._client.generate_content(
                 self._model,
@@ -320,7 +403,10 @@ class PromptPlanner:
                 continue
             expected_indices = list(range(1, len(template.slots) + 1))
             actual_indices = [item.index for item in plan.image_prompts]
-            if actual_indices == expected_indices:
+            if actual_indices == expected_indices and all(
+                _meets_density_contract(item, density_profile)
+                for item in plan.image_prompts
+            ):
                 # role 和 title 属于服务器模板元数据，不能信任模型自由发挥。
                 normalized_prompts = [
                     item.model_copy(
@@ -374,7 +460,9 @@ class PromptPlanner:
                 "继续遵守整套商品身份、品牌、配色和事实约束",
                 "不得虚构参数、认证、销量、产能、客户或测试结果",
                 "Prompt 必须独立完整，可直接交给目标图片模型",
-                "可见文字只能来自用户明确提供的内容",
+                "硬信息逐字来自用户已确认资料；描述标签只能来自用户事实、当前商品上下文或视觉证据",
+                "information_units 必须与重写后的 Prompt 和可见文字同步更新",
+                "information_units 不是记账字段；prompt 必须逐条落实每个 unit 的可视位置/证据，visible_text 与 units 同步",
             ],
             "language": language,
             "target_model": target_model,
@@ -386,6 +474,7 @@ class PromptPlanner:
                 "prompt": "string",
                 "negative_prompt": "string",
                 "visible_text": ["string"],
+                "information_units": _information_unit_schema(),
             },
         }
 
@@ -393,7 +482,8 @@ class PromptPlanner:
             request_instruction = dict(instruction)
             if attempt:
                 request_instruction["repair"] = (
-                    "上次结构错误。只输出包含 prompt、negative_prompt、visible_text 的 JSON 对象。"
+                    "上次结构错误。只输出包含 prompt、negative_prompt、visible_text、"
+                    "information_units 的 JSON 对象。"
                 )
             response = await self._client.generate_content(
                 self._model,
@@ -413,6 +503,9 @@ class PromptPlanner:
                 payload = _decode_json_object(_extract_text(response))
                 return ImagePrompt.model_validate(
                     {
+                        # 老版本模型若未返回信息单元，仍保留原有已审计声明；新模型
+                        # 返回该字段时会覆盖它，从而同步本次重写的画面证据。
+                        "information_units": image_prompt.information_units,
                         **payload,
                         "index": image_prompt.index,
                         "role": image_prompt.role,

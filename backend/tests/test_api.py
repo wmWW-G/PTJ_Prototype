@@ -269,6 +269,23 @@ def test_capabilities_expose_optional_visual_templates() -> None:
     assert procurement["generated_anchor_strategy"] == "independent"
 
 
+def test_capabilities_expose_reference_level_density_for_every_template() -> None:
+    """能力接口必须把全部模板统一的图文解说最低密度交给前端。"""
+
+    payload = _client().get("/api/capabilities").json()
+
+    for template in payload["visual_templates"].values():
+        assert template["density_profile"] == {
+            "level": "high",
+            "min_information_units": 9,
+            "max_information_units": 12,
+            "min_supporting_visuals": 4,
+            "min_visible_labels": 5,
+            "max_visible_labels": 8,
+            "target_occupancy_percent": 80,
+        }
+
+
 def test_stream_is_ndjson() -> None:
     """统一接口不传 mode 时仍使用逐行 JSON 返回实时结果。"""
 

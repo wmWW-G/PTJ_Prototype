@@ -1,11 +1,18 @@
 """结构化 Prompt Planner 测试。"""
 
 import json
+from typing import get_args
 from typing import Any
 
 import pytest
 
-from backend.domain import ImagePrompt, ProductContext, PromptPlanError
+from backend.domain import (
+    InformationUnitKind,
+    InformationUnitSource,
+    ImagePrompt,
+    ProductContext,
+    PromptPlanError,
+)
 from backend.planner import PromptPlanner
 from backend.templates import get_template
 from backend.visual_templates import get_visual_template
@@ -31,8 +38,39 @@ class FakeGoogleClient:
         }
 
 
-def _valid_plan(count: int) -> dict[str, Any]:
-    """创建指定槽位数量的合法 Planner 返回值。"""
+def _valid_plan(count: int, *, high_density: bool = False) -> dict[str, Any]:
+    """创建指定槽位数量的合法 Planner 返回值。
+
+    Args:
+        count: 需要生成的槽位数量。
+        high_density: 为 ``True`` 时，每张图附带参考图级别要求的九个信息单元。
+
+    Returns:
+        可被 ``PromptPlan`` 校验的模拟模型响应。
+
+    Raises:
+        不主动抛出异常。
+    """
+
+    information_units = (
+        [
+            {"kind": "hero", "content": "完整商品主体", "source": "visual_evidence"},
+            {"kind": "detail_callout", "content": "帽檐走线特写", "source": "visual_evidence"},
+            {"kind": "detail_callout", "content": "调节扣特写", "source": "visual_evidence"},
+            {"kind": "supporting_visual", "content": "侧面辅助角度", "source": "layout_instruction"},
+            {"kind": "variant", "content": "颜色变体矩阵", "source": "layout_instruction"},
+            {"kind": "label", "content": "透气面料", "source": "verified_input"},
+            {"kind": "label", "content": "可调节帽围", "source": "verified_input"},
+            {"kind": "label", "content": "弯曲帽檐", "source": "visual_evidence"},
+            {"kind": "badge", "content": "支持 Logo 定制", "source": "verified_input"},
+        ]
+        if high_density
+        else [
+            {"kind": "hero", "content": "完整商品主体", "source": "visual_evidence"},
+            {"kind": "label", "content": "透气面料", "source": "verified_input"},
+            {"kind": "badge", "content": "支持 Logo 定制", "source": "verified_input"},
+        ]
+    )
 
     return {
         "global_consistency_prompt": "保持同一商品外观、颜色、材质和品牌元素。",
@@ -42,7 +80,14 @@ def _valid_plan(count: int) -> dict[str, Any]:
                 "role": f"role_{index}",
                 "prompt": f"生成第 {index} 张商品图",
                 "negative_prompt": "不要改变商品结构",
-                "visible_text": [],
+                "visible_text": [
+                    "透气面料",
+                    "可调节帽围",
+                    "弯曲帽檐",
+                    "金属调节扣",
+                    "颜色选择",
+                ] if high_density else [],
+                "information_units": information_units,
             }
             for index in range(1, count + 1)
         ],
@@ -138,7 +183,7 @@ async def test_planner_rejects_wrong_slot_count_after_retry() -> None:
 async def test_planner_includes_visual_template_and_verified_optional_information() -> None:
     """模板风格与用户补充事实必须进入 Planner，且空字段不能被当成事实。"""
 
-    client = FakeGoogleClient([_valid_plan(6)])
+    client = FakeGoogleClient([_valid_plan(6, high_density=True)])
     planner = PromptPlanner(client=client, model="gemini-3.5-flash")
 
     plan = await planner.plan_variant(
@@ -167,7 +212,8 @@ async def test_planner_includes_visual_template_and_verified_optional_informatio
         "company_name": "Happy Arts & Crafts Ningbo Ltd.",
         "certifications": "FSC、BSCI、EN71",
     }
-    assert "可见文字只能来自用户明确提供的内容" in instruction["rules"]
+    assert any("硬信息逐字来自 verified_supplemental_info" in rule for rule in instruction["rules"])
+    assert any("描述标签只能来自用户事实、ProductContext 或视觉证据" in rule for rule in instruction["rules"])
     assert [item["title"] for item in instruction["slot_visual_directions"]] == [
         "企业总览",
         "仓储与交付",
@@ -199,10 +245,57 @@ async def test_planner_includes_visual_template_and_verified_optional_informatio
 
 
 @pytest.mark.asyncio
+async def test_high_density_template_retries_until_every_prompt_meets_contract() -> None:
+    """高密度模板必须拒绝首份低密度计划，并将完整契约与事实规则传给模型。"""
+
+    client = FakeGoogleClient([_valid_plan(6), _valid_plan(6, high_density=True)])
+    planner = PromptPlanner(client=client, model="gemini-3.5-flash")
+    visual_template = get_visual_template("dense_product_set")
+
+    plan = await planner.plan_variant(
+        template=get_template("product_set_01"),
+        visual_template=visual_template,
+        supplemental_info={
+            "product_name": "棒球帽",
+            "core_selling_points": "透气面料、可调节帽围",
+        },
+        context=ProductContext(
+            product_name="棒球帽",
+            product_description="一顶可调节的深色棒球帽",
+            selling_points=["透气面料", "可调节帽围"],
+            visual_style="采购信息图",
+        ),
+        user_requirement="生成高信息量采购商品套图",
+        language="zh-CN",
+        target_model="nano_banana_2",
+        variant_index=1,
+    )
+
+    assert len(client.requests) == 2
+    assert len(plan.image_prompts[0].information_units) == 9
+    assert len(plan.image_prompts[0].visible_text) == 5
+    instruction = json.loads(client.requests[0][1]["contents"][0]["parts"][0]["text"])
+    assert instruction["density_contract"] == visual_template.density_profile.model_dump()
+    assert instruction["output_schema"]["image_prompts"][0]["information_units"] == [
+        {
+            "kind": {"type": "string", "enum": list(get_args(InformationUnitKind))},
+            "content": "string",
+            "source": {"type": "string", "enum": list(get_args(InformationUnitSource))},
+        }
+    ]
+    assert any("硬信息逐字来自 verified_supplemental_info" in rule for rule in instruction["rules"])
+    assert any("描述标签只能来自用户事实、ProductContext 或视觉证据" in rule for rule in instruction["rules"])
+    assert any("单一版式骨架允许多个证据单元" in rule for rule in instruction["rules"])
+    assert any("不得把“一种主要结构”解释成一个卖点" in rule for rule in instruction["rules"])
+    assert any("逐条落实每个 unit 的可视位置/证据" in rule for rule in instruction["rules"])
+    assert any("visible_text 与 units 同步" in rule for rule in instruction["rules"])
+
+
+@pytest.mark.asyncio
 async def test_procurement_listing_template_binds_ten_b2b_roles() -> None:
     """采购详情模板的十个职责必须逐张进入 Planner，不能退回通用详情主题。"""
 
-    client = FakeGoogleClient([_valid_plan(8)])
+    client = FakeGoogleClient([_valid_plan(8, high_density=True)])
     planner = PromptPlanner(client=client, model="gemini-3.5-flash")
 
     plan = await planner.plan_variant(
@@ -260,6 +353,7 @@ async def test_refine_image_prompt_applies_feedback_without_changing_slot_identi
     """单张优化必须重写画面内容，同时保持该张图的序号、职责和标题。"""
 
     client = FakeGoogleClient([
+        "不是 JSON",
         {
             "prompt": "改为俯拍构图，增加三种颜色并保持商品主体一致",
             "negative_prompt": "不要改变商品结构",
@@ -273,6 +367,9 @@ async def test_refine_image_prompt_applies_feedback_without_changing_slot_identi
         title="颜色款式",
         prompt="展示两种颜色",
         negative_prompt="不要改变商品结构",
+        information_units=[
+            {"kind": "variant", "content": "黑色款", "source": "verified_input"},
+        ],
     )
 
     refined = await planner.refine_image_prompt(
@@ -290,3 +387,15 @@ async def test_refine_image_prompt_applies_feedback_without_changing_slot_identi
     assert refined.prompt == "改为俯拍构图，增加三种颜色并保持商品主体一致"
     request_text = client.requests[0][1]["contents"][0]["parts"][0]["text"]
     assert "颜色太少，改成俯拍并展示三种颜色" in request_text
+    assert "黑色款" in request_text
+    assert len(client.requests) == 2
+    repair_instruction = json.loads(client.requests[1][1]["contents"][0]["parts"][0]["text"])
+    assert "information_units" in repair_instruction["repair"]
+    assert repair_instruction["output_schema"]["information_units"][0]["kind"] == {
+        "type": "string",
+        "enum": list(get_args(InformationUnitKind)),
+    }
+    assert repair_instruction["output_schema"]["information_units"][0]["source"] == {
+        "type": "string",
+        "enum": list(get_args(InformationUnitSource)),
+    }

@@ -16,6 +16,33 @@ ImageType = Literal["main", "set", "listing", "poster"]
 ImageModel = Literal["nano_banana_2", "nano_banana_pro", "gpt_image_2_openrouter"]
 Resolution = Literal["512", "1K", "2K", "4K"]
 Quality = Literal["low", "medium", "high"]
+# 信息密度和布局配方均是服务端受控契约。前端只能选择登记 ID，不能借此注入
+# 任意构图指令，Planner 因而可以稳定地校验和复用高信息密度要求。
+DensityLevel = Literal["minimal", "balanced", "high"]
+LayoutRecipeId = Literal[
+    "commercial_overview",
+    "detail_callouts",
+    "benefit_evidence",
+    "variant_matrix",
+    "craft_options",
+    "application_matrix",
+    "quality_proof",
+    "packaging_trade",
+]
+InformationUnitKind = Literal[
+    "hero",
+    "supporting_visual",
+    "detail_callout",
+    "label",
+    "badge",
+    "variant",
+    "process_step",
+]
+InformationUnitSource = Literal[
+    "verified_input",
+    "visual_evidence",
+    "layout_instruction",
+]
 
 
 # 这些比例直接对应各模型官方能力，而不是前端自行拼出的公共交集：
@@ -151,6 +178,46 @@ class VisualTemplateField(BaseModel):
     required: bool = False
 
 
+class InformationDensityProfile(BaseModel):
+    """单张图片必须达到的可机器校验信息密度。"""
+
+    level: DensityLevel = "balanced"
+    min_information_units: int = Field(default=3, ge=1, le=12)
+    max_information_units: int = Field(default=8, ge=1, le=12)
+    min_supporting_visuals: int = Field(default=1, ge=0, le=8)
+    min_visible_labels: int = Field(default=0, ge=0, le=8)
+    max_visible_labels: int = Field(default=4, ge=0, le=8)
+    target_occupancy_percent: int = Field(default=60, ge=40, le=90)
+
+    @model_validator(mode="after")
+    def validate_ranges(self) -> "InformationDensityProfile":
+        """保证下限从不超过对应上限，避免 Planner 接收自相矛盾契约。
+
+        Args:
+            无；校验当前 Pydantic 模型实例。
+
+        Returns:
+            已通过范围校验的当前实例。
+
+        Raises:
+            ValueError: 信息单元或可见标签的最小值大于最大值时抛出。
+        """
+
+        if self.min_information_units > self.max_information_units:
+            raise ValueError("最小信息单元数不能大于最大信息单元数")
+        if self.min_visible_labels > self.max_visible_labels:
+            raise ValueError("最小可见标签数不能大于最大可见标签数")
+        return self
+
+
+class ImageInformationUnit(BaseModel):
+    """Planner 为单张图声明的一条可视信息或证据模块。"""
+
+    kind: InformationUnitKind
+    content: str = Field(min_length=1, max_length=160)
+    source: InformationUnitSource
+
+
 class VisualTemplateDefinition(BaseModel):
     """控制整套图片风格和信息密度的视觉模板。"""
 
@@ -170,6 +237,8 @@ class VisualTemplateDefinition(BaseModel):
     generated_anchor_strategy: Literal["reuse", "independent"] = "reuse"
     preview_images: list[str] = Field(default_factory=list, max_length=12)
     fields: list[VisualTemplateField] = Field(default_factory=list, max_length=16)
+    # 默认 balanced 保持全部已有模板和历史 API 响应兼容；高密度模板会覆盖它。
+    density_profile: InformationDensityProfile = Field(default_factory=InformationDensityProfile)
 
 
 class CustomVisualRoleSelection(BaseModel):
@@ -181,6 +250,7 @@ class CustomVisualRoleSelection(BaseModel):
 
     template_id: str = Field(min_length=1, max_length=64)
     role_index: int = Field(ge=0, le=11)
+    layout_recipe_id: LayoutRecipeId | None = None
 
 
 class ProductContext(BaseModel):
@@ -203,6 +273,8 @@ class ImagePrompt(BaseModel):
     prompt: str = Field(min_length=1)
     negative_prompt: str = ""
     visible_text: list[str] = Field(default_factory=list)
+    # 空数组兼容先前 Planner 输出；后续高密度 Planner 会逐项声明可验证信息模块。
+    information_units: list[ImageInformationUnit] = Field(default_factory=list, max_length=12)
 
 
 class PromptPlan(BaseModel):

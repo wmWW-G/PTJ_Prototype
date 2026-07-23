@@ -86,7 +86,7 @@ describe("GenerationPage", () => {
     expect(screen.queryByText("有参考图时会优先识别并保留商品特征；没有图片时，才根据文字从头生成。")).not.toBeInTheDocument();
   });
 
-  it("套图和详情图各自展示专属模板，主图使用设计参考与产品素材双输入", async () => {
+  it("套图和详情图各自展示高信息量默认模板，主图使用设计参考与产品素材双输入", async () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
@@ -115,12 +115,12 @@ describe("GenerationPage", () => {
     // 详情图展示 B2B 专属模板，同时继续保留商品图片与补充说明输入区。
     await user.click(screen.getByRole("button", { name: "详情图，8张每版" }));
     expect(screen.getByLabelText("生图模板")).toBeInTheDocument();
-    expect(screen.getByText("采购决策详情")).toBeInTheDocument();
+    expect(screen.getByText("高信息量采购详情")).toBeInTheDocument();
     expect(screen.getByLabelText("商品图片与补充说明")).toBeInTheDocument();
 
     // 套图和详情图维护独立默认选择，切回套图不会被详情图模板污染。
     await user.click(screen.getByRole("button", { name: "套图，6张每版" }));
-    expect(screen.getByText("标准商品套图")).toBeInTheDocument();
+    expect(screen.getByText("高信息量商品套图")).toBeInTheDocument();
   });
 
   it("主图可以分别上传参考设计图和自己的产品素材", async () => {
@@ -155,6 +155,119 @@ describe("GenerationPage", () => {
     expect(within(composer).getByText("1/6")).toBeInTheDocument();
   });
 
+  it("套图可单独上传参考设计图，并与商品素材隔离提交为图生图输入", async () => {
+    const user = userEvent.setup();
+    let uploadIndex = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/capabilities")) return new Response("{}", { status: 503 });
+      if (url.endsWith("/api/uploads")) {
+        uploadIndex += 1;
+        return new Response(JSON.stringify({
+          url: `https://blob.example/reference-${uploadIndex}.png`,
+          mime_type: "image/png",
+          filename: `reference-${uploadIndex}.png`,
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.endsWith("/api/generations/plan")) {
+        return ndjsonResponse([
+          { type: "job_started", job_id: "plan-job", status: "planning" },
+          {
+            type: "plan_ready",
+            job_id: "plan-job",
+            variant_index: 1,
+            data: {
+              plan: {
+                global_consistency_prompt: "保持商品一致",
+                image_prompts: Array.from({ length: 6 }, (_, index) => ({
+                  index: index + 1,
+                  role: `role_${index + 1}`,
+                  prompt: `第 ${index + 1} 张`,
+                })),
+              },
+            },
+          },
+          { type: "job_completed", job_id: "plan-job", status: "planned" },
+        ]);
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:style-reference");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+
+    render(<MemoryRouter><GenerationPage mode="generate" /></MemoryRouter>);
+
+    const composer = screen.getByLabelText("商品图片与补充说明");
+    const styleFile = new File(["style"], "set-layout.png", { type: "image/png" });
+    fireEvent.change(within(composer).getByLabelText("选择参考设计图文件"), {
+      target: { files: [styleFile] },
+    });
+    expect(within(composer).getByLabelText("参考设计图")).toBeInTheDocument();
+    expect(within(composer).getByAltText("set-layout.png")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "生成 Prompt" }));
+    await screen.findByLabelText("生图 Prompt 确认");
+
+    const planningBody = fetchMock.mock.calls
+      .filter(([input]) => String(input).endsWith("/api/generations/plan"))
+      .map(([, init]) => JSON.parse(String((init as RequestInit).body)))
+      .at(0);
+    expect(planningBody).toMatchObject({
+      style_reference_assets: [expect.objectContaining({ url: "https://blob.example/reference-1.png" })],
+      reference_assets: [],
+    });
+  });
+
+  it("套图同时上传商品图和风格图时，两个受控资产数组严格隔离", async () => {
+    const user = userEvent.setup();
+    let uploadIndex = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/capabilities")) return new Response("{}", { status: 503 });
+      if (url.endsWith("/api/uploads")) {
+        uploadIndex += 1;
+        return new Response(JSON.stringify({
+          url: `https://blob.example/reference-${uploadIndex}.png`,
+          mime_type: "image/png",
+          filename: `reference-${uploadIndex}.png`,
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.endsWith("/api/generations/plan")) {
+        return ndjsonResponse([
+          { type: "job_started", job_id: "plan-job", status: "planning" },
+          { type: "plan_ready", job_id: "plan-job", variant_index: 1, data: { plan: { global_consistency_prompt: "保持商品一致", image_prompts: Array.from({ length: 6 }, (_, index) => ({ index: index + 1, role: `role_${index + 1}`, prompt: `第 ${index + 1} 张` })) } } },
+          { type: "job_completed", job_id: "plan-job", status: "planned" },
+        ]);
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:separated-reference");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    render(<MemoryRouter><GenerationPage mode="generate" /></MemoryRouter>);
+
+    const composer = screen.getByLabelText("商品图片与补充说明");
+    fireEvent.change(within(composer).getByLabelText("选择参考设计图文件"), {
+      target: { files: [new File(["style"], "layout.png", { type: "image/png" })] },
+    });
+    fireEvent.change(within(composer).getByLabelText("选择商品参考图文件"), {
+      target: { files: [new File(["product"], "cap.png", { type: "image/png" })] },
+    });
+    await user.click(screen.getByRole("button", { name: "生成 Prompt" }));
+    await screen.findByLabelText("生图 Prompt 确认");
+
+    const planningBody = fetchMock.mock.calls
+      .filter(([input]) => String(input).endsWith("/api/generations/plan"))
+      .map(([, init]) => JSON.parse(String((init as RequestInit).body)))
+      .at(0);
+    expect(planningBody).toMatchObject({
+      reference_assets: [expect.objectContaining({ url: "https://blob.example/reference-1.png" })],
+      style_reference_assets: [expect.objectContaining({ url: "https://blob.example/reference-2.png" })],
+    });
+    expect(planningBody.reference_assets[0].url).not.toBe(planningBody.style_reference_assets[0].url);
+  });
+
   it("把方案数量合并进真实生图参数区", () => {
     render(
       <MemoryRouter>
@@ -183,7 +296,9 @@ describe("GenerationPage", () => {
     expect(screen.queryByText("批量加文字 / LOGO（选填）")).not.toBeInTheDocument();
 
     await user.click(trigger);
-    expect(screen.getByRole("dialog", { name: "添加品牌 Logo" })).toBeInTheDocument();
+    const logoDialog = screen.getByRole("dialog", { name: "添加品牌 Logo" });
+    expect(logoDialog).toBeInTheDocument();
+    expect(trigger.parentElement).toContainElement(logoDialog);
     expect(screen.getByLabelText("Logo 显示位置")).toHaveValue("bottom-right");
     expect(screen.getByText("默认使用克制尺寸和安全边距，不遮挡商品主体。")).toBeInTheDocument();
 
@@ -228,6 +343,7 @@ describe("GenerationPage", () => {
     });
 
     expect(within(composer).getByAltText("pasted-product.png")).toBeInTheDocument();
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
     await user.click(within(composer).getByRole("button", { name: "查看图片 pasted-product.png" }));
     const dialog = screen.getByRole("dialog", { name: "查看图片 pasted-product.png" });
     expect(within(dialog).getByAltText("pasted-product.png")).toBeInTheDocument();
@@ -323,6 +439,12 @@ describe("GenerationPage", () => {
                   role: `role_${index + 1}`,
                   title: index === 0 ? "商品主视觉" : `第 ${index + 1} 张`,
                   prompt: index === 0 ? "白底居中展示商品主视觉" : `生成第 ${index + 1} 张商品图`,
+                  visible_text: index === 0 ? ["透气面料", "可调节帽围", "支持 Logo 定制"] : [],
+                  information_units: index === 0 ? Array.from({ length: 7 }, (_, unitIndex) => ({
+                    kind: unitIndex === 0 ? "hero" : "label",
+                    content: `信息模块 ${unitIndex + 1}`,
+                    source: "verified_input",
+                  })) : undefined,
                 })),
               },
             },
@@ -344,6 +466,8 @@ describe("GenerationPage", () => {
 
     const review = await screen.findByLabelText("生图 Prompt 确认");
     expect(within(review).getByText("白底居中展示商品主视觉")).toBeInTheDocument();
+    expect(within(review).getByText("7 个信息单元 · 3 条画面文案")).toBeInTheDocument();
+    expect(within(review).queryByText("verified_input")).not.toBeInTheDocument();
     expect(within(review).getByRole("button", { name: "确认 Prompt，开始生成 6 张" })).toBeInTheDocument();
     const generationBodies = fetchMock.mock.calls
       .filter((call) => String(call[0]).includes("/api/generations/plan"))

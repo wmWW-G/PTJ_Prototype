@@ -44,6 +44,33 @@ export interface PlannedImagePrompt {
   prompt: string;
   negative_prompt?: string;
   visible_text?: string[];
+  /** Planner 为高信息量图片声明的可视证据与文案模块；旧计划可省略。 */
+  information_units?: ImageInformationUnit[];
+}
+
+/** 与后端一致的信息密度等级。 */
+export type DensityLevel = "minimal" | "balanced" | "high";
+/** 与后端一致的单张画面信息模块类型。 */
+export type InformationUnitKind = "hero" | "supporting_visual" | "detail_callout" | "label" | "badge" | "variant" | "process_step";
+/** 信息模块可追溯的事实来源。 */
+export type InformationUnitSource = "verified_input" | "visual_evidence" | "layout_instruction";
+
+/** 单张图片的机器可校验信息密度目标。 */
+export interface InformationDensityProfile {
+  level: DensityLevel;
+  min_information_units: number;
+  max_information_units: number;
+  min_supporting_visuals: number;
+  min_visible_labels: number;
+  max_visible_labels: number;
+  target_occupancy_percent: number;
+}
+
+/** Planner 输出的一条可视信息或证据模块。 */
+export interface ImageInformationUnit {
+  kind: InformationUnitKind;
+  content: string;
+  source: InformationUnitSource;
 }
 
 /** 后端返回的完整单版 Prompt 计划。 */
@@ -62,7 +89,7 @@ export interface ReferenceAssetPayload {
 /** 提交给 FastAPI 的真实生图请求。 */
 export interface LiveGenerationRequest {
   /**
-   * 不由前端提交 mode；后端根据 reference_assets 是否为空自动选择文生图或图生图。
+   * 不由前端提交 mode；后端根据 style、商品参考图或 Logo 任一资产是否存在自动选择文生图或图生图。
    */
   image_type: "main" | "set" | "listing" | "poster";
   template_id: string;
@@ -161,6 +188,8 @@ export interface VisualTemplateCapability {
   role_compositions?: string[];
   preview_images: string[];
   fields: VisualTemplateFieldCapability[];
+  /** 旧后端未返回时视为 balanced，保持历史模板可用。 */
+  density_profile?: InformationDensityProfile;
 }
 
 /** 前端动态表单需要的完整服务能力。 */
